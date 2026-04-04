@@ -233,11 +233,38 @@ export default function AdminDashboard() {
     await supabase.from("roadmaps").update({ is_published: !currentStatus }).eq("id", id); fetchRoadmaps();
   };
 
+// --- Delete Logic ---
   const handleDelete = async (id: string, fileUrl: string) => {
     if (!window.confirm("Are you sure you want to permanently delete this roadmap?")) return;
-    const fileName = fileUrl.split('/').pop();
-    if (fileName) await supabase.storage.from("roadmap_files").remove([fileName]);
-    await supabase.from("roadmaps").delete().eq("id", id); fetchRoadmaps();
+
+    try {
+      // 1. Safely extract the exact filename, ignoring domain paths and query strings
+      // This splits at your bucket name and grabs everything after it, trimming any '?t=' tags
+      const exactFileName = fileUrl.split('roadmap_files/')[1]?.split('?')[0];
+
+      if (exactFileName) {
+        // 2. Delete from the Storage Bucket FIRST
+        const { error: storageError } = await supabase.storage
+          .from("roadmap_files")
+          .remove([exactFileName]);
+          
+        if (storageError) {
+          console.error("Storage Deletion Error:", storageError.message);
+          alert(`Database row deleted, but file remained in storage: ${storageError.message}`);
+        }
+      }
+
+      // 3. Delete from the Database
+      const { error: dbError } = await supabase.from("roadmaps").delete().eq("id", id);
+      if (dbError) throw dbError;
+
+      // 4. Refresh the UI table
+      fetchRoadmaps();
+      
+    } catch (error: any) {
+      console.error("Complete Deletion Failed:", error);
+      alert("Failed to delete roadmap completely.");
+    }
   };
 
   if (isCheckingAuth) return <div className="min-h-screen flex items-center justify-center font-sans text-neutral-500">Securing dashboard...</div>;

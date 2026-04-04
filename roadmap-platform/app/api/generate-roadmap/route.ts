@@ -3,6 +3,36 @@ import { NextResponse } from "next/server";
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
 
+// --- NEW: Helper to extract Playlist ID from URL ---
+function extractPlaylistId(url: string) {
+  const reg = /[&?]list=([^&]+)/i;
+  const match = url.match(reg);
+  return match ? match[1] : null;
+}
+
+// --- NEW: Helper to fetch actual videos from YouTube ---
+async function getPlaylistItems(playlistId: string) {
+  const apiKey = process.env.YOUTUBE_API_KEY;
+  if (!apiKey) return null;
+
+  try {
+    // Fetch up to 50 videos from the playlist
+    const res = await fetch(`https://www.googleapis.com/youtube/v3/playlistItems?part=snippet&maxResults=50&playlistId=${playlistId}&key=${apiKey}`);
+    const data = await res.json();
+    
+    if (!data.items) return null;
+
+    // Format them cleanly for the AI
+    return data.items.map((item: any) => ({
+      title: item.snippet.title,
+      url: `https://www.youtube.com/watch?v=${item.snippet.resourceId.videoId}&list=${playlistId}`
+    }));
+  } catch (e) {
+    console.error("YouTube API Error:", e);
+    return null;
+  }
+}
+
 export async function POST(req: Request) {
   try {
     const { topic, level, playlistUrl } = await req.json();
@@ -11,18 +41,45 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Topic is required." }, { status: 400 });
     }
 
+    // --- NEW: Fetch Real Videos if URL is provided ---
+    let realVideoContext = "";
+    if (playlistUrl) {
+      const pid = extractPlaylistId(playlistUrl);
+      if (pid) {
+        const videos = await getPlaylistItems(pid);
+        if (videos && videos.length > 0) {
+          realVideoContext = `\n\nCRITICAL PLAYLIST DATA: The user wants to use a specific playlist. Here is the EXACT JSON list of real videos and their valid URLs. You MUST use these exact titles and URLs to construct the 'lec-block' sections in the 'Lecture Spine' tab.\n${JSON.stringify(videos, null, 2)}`;
+        }
+      }
+    }
+
     const model = genAI.getGenerativeModel({
       model: "gemini-2.5-flash",
       systemInstruction: `You are an expert university curriculum architect. Your job is to generate a comprehensive, actionable, day-by-day HTML learning roadmap.
 
-You MUST use EXACTLY the following HTML structure, classes, and CSS. You will build a syllabus anchored by a "Primary Spine" (a main video lecture series) and supplemented by "Visual Intuition" (e.g., 3Blue1Brown) and "Practice" (e.g., Khan Academy/MIT OCW).
-
 CRITICAL RULES:
 1. ALWAYS include these exact 4 phase tabs: Lecture Spine (ph-spine), CS/AI/Real-World (ph-cs), Boss Level (ph-boss), and Daily Plan (ph-plan).
-2. For the 'Lecture Spine', break the topic down into 5 to 10 logical 'lec-block' sections. Invent realistic video durations and parts.
-3. For the 'Daily Plan', create a realistic week-by-week <table> schedule that references the lectures.
+2. For the 'Lecture Spine', break the topic down into 5 to 10 logical 'lec-block' sections. 
+3. **URL HANDLING (ABSOLUTE PRIORITY):** - If given a JSON list of real videos in the prompt, you MUST use those exact URLs.
+   - For ANY other YouTube video (including the spine if no JSON was provided, or supplementary Khan Academy/3Blue1Brown videos), DO NOT attempt to guess the YouTube watch ID. You MUST generate a YouTube search URL like this: href="https://www.youtube.com/results?search_query=Khan+Academy+Chain+Rule". Guessing IDs results in broken links.
+   - For non-YouTube text resources (like documentation or articles), you may generate standard semantic URLs (e.g., https://www.learn-c.org/en/Functions).
 4. **MATH FORMATTING:** Use double $$ for block math equations and single $ for inline math.
 5. DO NOT wrap the final output in markdown code blocks (\`\`\`html). Output ONLY raw HTML.
+6. **INTERACTIVITY (CRITICAL):** Every single <div class="lec-block"> MUST have a unique ID. You MUST wire up the onclick="tog('YOUR_ID')" on the header, and include the dropdown arrow. 
+
+=== EXACT BLOCK TEMPLATE TO USE ===
+<div class="lec-block" id="lec-1">
+  <div class="lec-head" onclick="tog('lec-1')">
+    <span class="lec-num">LEC 1</span>
+    <span class="lec-title">Your Title Here</span>
+    <span class="lec-parts">3 parts</span>
+    <span class="lec-arrow">▾</span>
+  </div>
+  <div class="lec-body">
+    <button class="done-btn" onclick="toggleProgress(this)">Mark Done</button>
+  </div>
+</div>
+=== END BLOCK TEMPLATE ===
 
 === EXACT TEMPLATE TO FOLLOW ===
 <style>
@@ -41,17 +98,19 @@ CRITICAL RULES:
 .ph{display:none}.ph.show{display:block}
 .ph-lbl{font-size:11px;font-weight:500;letter-spacing:0.07em;text-transform:uppercase;color:var(--color-text-tertiary);margin-bottom:1rem}
 .intro-box{background:var(--color-background-secondary);border-radius:var(--border-radius-lg);padding:1rem 1.25rem;margin-bottom:1.5rem;font-size:13px;color:var(--color-text-secondary);line-height:1.75}
-.lec-block{border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-lg);margin-bottom:12px;overflow:hidden}
+.lec-block{border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-lg);margin-bottom:12px;overflow:hidden;transition:all 0.2s;}
 .lec-head{display:flex;align-items:center;gap:12px;padding:10px 14px;cursor:pointer;background:var(--color-background-primary)}
 .lec-num{font-size:11px;font-weight:500;padding:3px 9px;border-radius:999px;background:#FCEBEB;color:#791F1F;white-space:nowrap}
 .lec-title{font-size:14px;font-weight:500;color:var(--color-text-primary);flex:1}
 .lec-parts{font-size:11px;color:var(--color-text-tertiary);white-space:nowrap}
+.lec-arrow{font-size:12px;color:var(--color-text-tertiary);transition:transform 0.15s}
 .lec-body{display:none;padding:12px 14px 14px;border-top:0.5px solid var(--color-border-tertiary);background:var(--color-background-primary)}
 .lec-block.open .lec-body{display:block}
+.lec-block.open .lec-arrow{transform:rotate(180deg)}
 .section-lbl{font-size:11px;font-weight:500;text-transform:uppercase;letter-spacing:0.06em;color:var(--color-text-tertiary);margin:10px 0 5px}
 .res-row{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:4px}
 .chip{display:inline-flex;align-items:center;gap:5px;font-size:12px;padding:4px 10px;border-radius:var(--border-radius-md);text-decoration:none;cursor:pointer;line-height:1.4}
-.c-pl{background:#FCEBEB;border:0.5px solid #F7C1C1;color:#791F1F} .c-3b{background:#EEEDFE;border:0.5px solid #CECBF6;color:#3C3489} .c-kh{background:#EAF3DE;border:0.5px solid #C0DD97;color:#27500A}
+.c-pl{background:#FCEBEB;border:0.5px solid #F7C1C1;color:#791F1F} .c-3b{background:#EEEDFE;border:0.5px solid #CECBF6;color:#3C3489} .c-kh{background:#EAF3DE;border:0.5px solid #C0DD97;color:#27500A} .c-cs{background:#E1F5EE;border:0.5px solid #9FE1CB;color:#085041}
 .meta{font-size:11px;color:var(--color-text-tertiary);margin-bottom:6px}
 .warn{background:#FAEEDA;border:0.5px solid #FAC775;border-radius:var(--border-radius-md);padding:7px 10px;font-size:12px;color:#633806;margin:8px 0}
 .model-b{background:#EEEDFE;border:0.5px solid #CECBF6;border-radius:var(--border-radius-md);padding:7px 10px;font-size:12px;color:#3C3489;margin:8px 0}
@@ -69,6 +128,10 @@ CRITICAL RULES:
 .day-table td .lec-tag{font-size:11px;background:#FCEBEB;color:#791F1F;padding:2px 7px;border-radius:999px;margin-right:4px}
 .week-hdr{font-size:13px;font-weight:500;color:var(--color-text-primary);margin:1.25rem 0 8px;padding-bottom:6px;border-bottom:0.5px solid var(--color-border-tertiary)}
 .ask-btn{display:inline-flex;align-items:center;gap:6px;margin-top:1rem;font-size:13px;padding:7px 14px;border-radius:var(--border-radius-md);border:0.5px solid var(--color-border-secondary);background:transparent;color:var(--color-text-secondary);cursor:pointer}
+.done-btn{margin-top:10px;font-size:12px;padding:6px 12px;border-radius:6px;border:1px solid #C0DD97;background:#EAF3DE;color:#27500A;cursor:pointer;transition:all 0.2s;}
+.done-btn:hover{background:#C0DD97;}
+.lec-block.completed{opacity:0.6; border-color:#C0DD97;}
+.lec-block.completed .lec-head{background:#f4f9ef;}
 </style>
 
 <div class="w">
@@ -107,29 +170,11 @@ CRITICAL RULES:
   <div class="ph-lbl">Phase 6 · Micro Daily Plan</div>
   </div>
 </div>
-
-<script>
-function go(id,btn){
-  document.querySelectorAll('.ph').forEach(p=>p.classList.remove('show'));
-  document.querySelectorAll('.tab').forEach(b=>b.classList.remove('on'));
-  document.getElementById('ph-'+id).classList.add('show');
-  btn.classList.add('on');
-}
-function tog(id){
-  const b=document.getElementById(id);
-  b.classList.toggle('open');
-}
-</script>
 === END TEMPLATE ===`
     });
 
-    let prompt = `Generate a full, highly detailed V3 learning roadmap for the topic: "${topic}". Target skill level: "${level || 'Intermediate'}". `;
-    
-    if (playlistUrl) {
-      prompt += `The user has requested to use this specific playlist URL as the primary spine: "${playlistUrl}". Please adapt your knowledge of this course or similar courses to fit the requested V3 syllabus format exactly.`;
-    } else {
-      prompt += `Please assume a highly-regarded, standard top-tier university playlist (like MIT, Harvard, or Prof Leonard) as the primary spine and build the curriculum around it.`;
-    }
+    // Combine topic and the real video context
+    const prompt = `Generate a highly detailed V3 learning roadmap for the topic: "${topic}". Target skill level: "${level || 'Intermediate'}". ${realVideoContext}`;
 
     const result = await model.generateContent(prompt);
     let generatedHtml = result.response.text();
