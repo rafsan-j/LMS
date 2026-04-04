@@ -39,6 +39,7 @@ export default function AdminDashboard() {
   // Generator State
   const [genTopic, setGenTopic] = useState("");
   const [genLevel, setGenLevel] = useState("");
+  const [genUrl, setGenUrl] = useState(""); // NEW: Playlist URL State
   const [isGenerating, setIsGenerating] = useState(false);
 
   // AI & Drag State
@@ -120,13 +121,17 @@ export default function AdminDashboard() {
     if (!genTopic.trim()) return;
 
     setIsGenerating(true);
-    setStatus({ type: "loading", msg: "AI is architecting the curriculum. This takes 10-20 seconds..." });
+    setStatus({ type: "loading", msg: "AI is architecting the V3 curriculum. This takes 10-20 seconds..." });
 
     try {
       const response = await fetch('/api/generate-roadmap', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ topic: genTopic, level: genLevel })
+        body: JSON.stringify({ 
+          topic: genTopic, 
+          level: genLevel,
+          playlistUrl: genUrl // NEW: Sending the URL
+        })
       });
 
       if (!response.ok) throw new Error("Failed to generate roadmap.");
@@ -280,6 +285,11 @@ export default function AdminDashboard() {
               <div>
                 <label className="block text-sm font-medium text-neutral-700 mb-1">Target Audience / Skill Level</label>
                 <input type="text" value={genLevel} onChange={(e) => setGenLevel(e.target.value)} disabled={isGenerating} className="w-full p-3 border border-neutral-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none disabled:bg-neutral-50 disabled:text-neutral-400 transition-colors" placeholder="e.g., Absolute Beginner, College Sophomore, Advanced" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-neutral-700 mb-1">YouTube Playlist URL (Optional)</label>
+                <input type="url" value={genUrl} onChange={(e) => setGenUrl(e.target.value)} disabled={isGenerating} className="w-full p-3 border border-neutral-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none disabled:bg-neutral-50 disabled:text-neutral-400 transition-colors" placeholder="https://youtube.com/playlist?list=..." />
+                <p className="text-xs text-neutral-500 mt-1">Leave blank to let AI pick the best industry-standard curriculum.</p>
               </div>
               <button type="submit" disabled={isGenerating || !genTopic.trim()} className="w-full bg-blue-600 text-white font-medium py-3.5 rounded-xl hover:bg-blue-700 transition disabled:opacity-50 flex items-center justify-center gap-2 mt-4 shadow-sm shadow-blue-600/20">
                 {isGenerating ? <><Loader2 size={18} className="animate-spin" /> Architecting...</> : <><Sparkles size={18} /> Generate Roadmap</>}
