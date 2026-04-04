@@ -5,7 +5,7 @@ import { supabase } from "../../lib/supabase";
 import { useRouter } from "next/navigation";
 import { 
   Trash2, Eye, EyeOff, FileText, UploadCloud, 
-  LayoutDashboard, Code, FileUp, Pencil, X, Sparkles
+  LayoutDashboard, Code, FileUp, Pencil, X, Sparkles, Wand2, Loader2
 } from "lucide-react";
 
 type Roadmap = {
@@ -22,7 +22,7 @@ export default function AdminDashboard() {
   const [isCheckingAuth, setIsCheckingAuth] = useState(true);
   
   // Navigation State
-  const [activeTab, setActiveTab] = useState<"upload" | "manage">("upload");
+  const [activeTab, setActiveTab] = useState<"upload" | "manage" | "generate">("upload");
   const [uploadMethod, setUploadMethod] = useState<"file" | "paste">("file");
   
   // Data State
@@ -36,6 +36,11 @@ export default function AdminDashboard() {
   const [pastedHtml, setPastedHtml] = useState("");
   const [status, setStatus] = useState<{ type: "error" | "success" | "loading", msg: string } | null>(null);
   
+  // Generator State
+  const [genTopic, setGenTopic] = useState("");
+  const [genLevel, setGenLevel] = useState("");
+  const [isGenerating, setIsGenerating] = useState(false);
+
   // AI & Drag State
   const [isExtracting, setIsExtracting] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
@@ -81,11 +86,11 @@ export default function AdminDashboard() {
     return data.publicUrl;
   };
 
-  // --- NEW: Reusable AI Extraction Logic ---
+  // --- Reusable AI Extraction Logic ---
   const extractMetadataFromText = async (text: string) => {
     if (!text.trim()) return;
     setIsExtracting(true);
-    setStatus({ type: "loading", msg: "AI is analyzing your roadmap..." });
+    setStatus({ type: "loading", msg: "AI is analyzing your roadmap metadata..." });
 
     try {
       const response = await fetch('/api/extract-metadata', {
@@ -109,38 +114,54 @@ export default function AdminDashboard() {
     }
   };
 
-  // --- NEW: Drag and Drop Handlers ---
-  const handleDragOver = (e: React.DragEvent) => {
+  // --- NEW: Curriculum Generator Logic ---
+  const handleGenerate = async (e: React.FormEvent) => {
     e.preventDefault();
-    setIsDragging(true);
-  };
+    if (!genTopic.trim()) return;
 
-  const handleDragLeave = (e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragging(false);
-  };
+    setIsGenerating(true);
+    setStatus({ type: "loading", msg: "AI is architecting the curriculum. This takes 10-20 seconds..." });
 
-  const handleDrop = async (e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragging(false);
-    
-    const droppedFile = e.dataTransfer.files?.[0];
-    if (droppedFile) {
-      setFile(droppedFile);
-      const text = await droppedFile.text();
-      extractMetadataFromText(text); // Trigger AI on Drop
+    try {
+      const response = await fetch('/api/generate-roadmap', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ topic: genTopic, level: genLevel })
+      });
+
+      if (!response.ok) throw new Error("Failed to generate roadmap.");
+
+      const data = await response.json();
+      
+      // Magic flow: Set the HTML, switch to the Paste tab, and run metadata extraction!
+      setPastedHtml(data.html);
+      setUploadMethod("paste");
+      setActiveTab("upload");
+      setGenTopic("");
+      setGenLevel("");
+      
+      // We purposefully do not await this so it happens seamlessly in the background
+      extractMetadataFromText(data.html);
+
+    } catch (error: any) {
+      setStatus({ type: "error", msg: error.message });
+    } finally {
+      setIsGenerating(false);
     }
   };
 
+  // --- Drag and Drop Handlers ---
+  const handleDragOver = (e: React.DragEvent) => { e.preventDefault(); setIsDragging(true); };
+  const handleDragLeave = (e: React.DragEvent) => { e.preventDefault(); setIsDragging(false); };
+  const handleDrop = async (e: React.DragEvent) => {
+    e.preventDefault(); setIsDragging(false);
+    const droppedFile = e.dataTransfer.files?.[0];
+    if (droppedFile) { setFile(droppedFile); const text = await droppedFile.text(); extractMetadataFromText(text); }
+  };
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFile = e.target.files?.[0];
-    if (selectedFile) {
-      setFile(selectedFile);
-      const text = await selectedFile.text();
-      extractMetadataFromText(text); // Trigger AI on Browse
-    } else {
-      setFile(null);
-    }
+    if (selectedFile) { setFile(selectedFile); const text = await selectedFile.text(); extractMetadataFromText(text); } 
+    else { setFile(null); }
   };
 
   // --- Upload Logic ---
@@ -150,31 +171,29 @@ export default function AdminDashboard() {
 
     try {
       let finalFile = file;
-
       if (uploadMethod === "paste") {
         if (!pastedHtml.trim()) throw new Error("Please paste your HTML code.");
         finalFile = createHtmlFileFromText(pastedHtml, "pasted-roadmap.html");
       }
-
       if (!finalFile) throw new Error("Please select or paste an HTML file.");
 
       const publicUrl = await uploadFileToStorage(finalFile);
-
-      const { error: dbError } = await supabase
-        .from("roadmaps")
-        .insert([{ title, description, category, file_url: publicUrl, is_published: true }]);
-      
+      const { error: dbError } = await supabase.from("roadmaps").insert([{ title, description, category, file_url: publicUrl, is_published: true }]);
       if (dbError) throw dbError;
 
       setStatus({ type: "success", msg: "Roadmap successfully published!" });
       setTitle(""); setDescription(""); setCategory(""); setFile(null); setPastedHtml("");
       fetchRoadmaps();
+      
+      // Send user to manage tab to see their new upload
+      setActiveTab("manage");
+      
     } catch (error: any) {
       setStatus({ type: "error", msg: error.message });
     }
   };
 
-  // --- Edit Logic (Same as before) ---
+  // --- Edit Logic ---
   const openEditModal = (roadmap: Roadmap) => {
     setEditingRoadmap(roadmap); setEditUploadMethod("keep"); setEditFile(null); setEditPastedHtml(""); setStatus(null);
   };
@@ -204,7 +223,7 @@ export default function AdminDashboard() {
     }
   };
 
-  // --- Delete & Toggle Logic (Same as before) ---
+  // --- Delete & Toggle Logic ---
   const togglePublish = async (id: string, currentStatus: boolean) => {
     await supabase.from("roadmaps").update({ is_published: !currentStatus }).eq("id", id); fetchRoadmaps();
   };
@@ -229,6 +248,9 @@ export default function AdminDashboard() {
             <p className="text-neutral-500 text-sm">Manage your study curriculum</p>
           </div>
           <div className="flex bg-neutral-100 p-1 rounded-lg border border-neutral-200 w-fit">
+            <button onClick={() => { setActiveTab("generate"); setStatus(null); }} className={`flex items-center gap-2 px-5 py-2 text-sm font-medium rounded-md transition-all ${activeTab === "generate" ? "bg-white shadow-sm text-blue-700" : "text-neutral-500 hover:text-neutral-700"}`}>
+              <Wand2 size={16} /> Generate
+            </button>
             <button onClick={() => { setActiveTab("upload"); setStatus(null); }} className={`flex items-center gap-2 px-5 py-2 text-sm font-medium rounded-md transition-all ${activeTab === "upload" ? "bg-white shadow-sm text-neutral-900" : "text-neutral-500 hover:text-neutral-700"}`}>
               <UploadCloud size={16} /> Publish
             </button>
@@ -238,23 +260,49 @@ export default function AdminDashboard() {
           </div>
         </div>
 
+        {/* --- TAB 0: GENERATE --- */}
+        {activeTab === "generate" && (
+          <div className="bg-white p-8 rounded-2xl shadow-sm border border-neutral-200 max-w-2xl mx-auto relative overflow-hidden">
+            <div className="absolute top-0 right-0 w-32 h-32 bg-blue-500/5 rounded-full blur-3xl"></div>
+            <div className="mb-8 text-center">
+              <div className="w-12 h-12 bg-blue-50 text-blue-600 rounded-xl flex items-center justify-center mx-auto mb-4">
+                <Wand2 size={24} />
+              </div>
+              <h2 className="text-2xl font-medium text-neutral-900 mb-2">Curriculum Architect</h2>
+              <p className="text-neutral-500 text-sm">Let AI build a comprehensive, 6-phase interactive roadmap for any topic.</p>
+            </div>
+
+            <form onSubmit={handleGenerate} className="space-y-5 relative z-10">
+              <div>
+                <label className="block text-sm font-medium text-neutral-700 mb-1">What do you want to learn?</label>
+                <input type="text" required value={genTopic} onChange={(e) => setGenTopic(e.target.value)} disabled={isGenerating} className="w-full p-4 text-lg border border-neutral-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:outline-none disabled:bg-neutral-50 disabled:text-neutral-400 transition-colors" placeholder="e.g., Quantum Physics, React.js, Macroeconomics" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-neutral-700 mb-1">Target Audience / Skill Level</label>
+                <input type="text" value={genLevel} onChange={(e) => setGenLevel(e.target.value)} disabled={isGenerating} className="w-full p-3 border border-neutral-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none disabled:bg-neutral-50 disabled:text-neutral-400 transition-colors" placeholder="e.g., Absolute Beginner, College Sophomore, Advanced" />
+              </div>
+              <button type="submit" disabled={isGenerating || !genTopic.trim()} className="w-full bg-blue-600 text-white font-medium py-3.5 rounded-xl hover:bg-blue-700 transition disabled:opacity-50 flex items-center justify-center gap-2 mt-4 shadow-sm shadow-blue-600/20">
+                {isGenerating ? <><Loader2 size={18} className="animate-spin" /> Architecting...</> : <><Sparkles size={18} /> Generate Roadmap</>}
+              </button>
+            </form>
+          </div>
+        )}
+
         {/* --- TAB 1: UPLOAD --- */}
         {activeTab === "upload" && (
           <div className="bg-white p-8 rounded-2xl shadow-sm border border-neutral-200">
             <form onSubmit={handleUpload} className="grid grid-cols-1 lg:grid-cols-2 gap-10">
               
-              {/* Left Column: Metadata */}
               <div className="space-y-5">
                 <div className="flex items-center justify-between mb-1">
                   <label className="block text-sm font-medium text-neutral-700">Curriculum Details</label>
                   {isExtracting && <span className="text-xs text-blue-600 font-medium flex items-center gap-1 animate-pulse"><Sparkles size={12} /> AI Generating...</span>}
                 </div>
-                <div><label className="block text-xs font-medium text-neutral-500 mb-1">Roadmap Title</label><input type="text" required value={title} onChange={(e) => setTitle(e.target.value)} disabled={isExtracting} className="w-full p-3 border border-neutral-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none disabled:bg-neutral-50 disabled:text-neutral-400 transition-colors" placeholder="e.g., Advanced Calculus" /></div>
-                <div><label className="block text-xs font-medium text-neutral-500 mb-1">Category</label><input type="text" required value={category} onChange={(e) => setCategory(e.target.value)} disabled={isExtracting} className="w-full p-3 border border-neutral-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none disabled:bg-neutral-50 disabled:text-neutral-400 transition-colors" placeholder="e.g., Mathematics" /></div>
-                <div><label className="block text-xs font-medium text-neutral-500 mb-1">Brief Description</label><textarea rows={4} required value={description} onChange={(e) => setDescription(e.target.value)} disabled={isExtracting} className="w-full p-3 border border-neutral-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none disabled:bg-neutral-50 disabled:text-neutral-400 transition-colors resize-none" placeholder="What will the student learn?" /></div>
+                <div><label className="block text-xs font-medium text-neutral-500 mb-1">Roadmap Title</label><input type="text" required value={title} onChange={(e) => setTitle(e.target.value)} disabled={isExtracting || isGenerating} className="w-full p-3 border border-neutral-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none disabled:bg-neutral-50 disabled:text-neutral-400 transition-colors" placeholder="e.g., Advanced Calculus" /></div>
+                <div><label className="block text-xs font-medium text-neutral-500 mb-1">Category</label><input type="text" required value={category} onChange={(e) => setCategory(e.target.value)} disabled={isExtracting || isGenerating} className="w-full p-3 border border-neutral-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none disabled:bg-neutral-50 disabled:text-neutral-400 transition-colors" placeholder="e.g., Mathematics" /></div>
+                <div><label className="block text-xs font-medium text-neutral-500 mb-1">Brief Description</label><textarea rows={4} required value={description} onChange={(e) => setDescription(e.target.value)} disabled={isExtracting || isGenerating} className="w-full p-3 border border-neutral-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none disabled:bg-neutral-50 disabled:text-neutral-400 transition-colors resize-none" placeholder="What will the student learn?" /></div>
               </div>
 
-              {/* Right Column: File Source */}
               <div className="flex flex-col h-full">
                 <label className="block text-sm font-medium text-neutral-700 mb-2">Content Source</label>
                 
@@ -269,16 +317,9 @@ export default function AdminDashboard() {
 
                 <div className="flex-grow flex flex-col mb-6 relative">
                   {uploadMethod === "file" ? (
-                    // NEW: Drag and Drop Area
                     <div 
-                      onDragOver={handleDragOver}
-                      onDragLeave={handleDragLeave}
-                      onDrop={handleDrop}
-                      className={`flex-grow border-2 border-dashed rounded-lg flex flex-col items-center justify-center p-8 transition-all duration-200 ${
-                        isDragging ? 'border-blue-500 bg-blue-50' : 
-                        isExtracting ? 'border-blue-300 bg-blue-50/50' : 
-                        'border-neutral-300 bg-neutral-50 hover:bg-neutral-100'
-                      }`}
+                      onDragOver={handleDragOver} onDragLeave={handleDragLeave} onDrop={handleDrop}
+                      className={`flex-grow border-2 border-dashed rounded-lg flex flex-col items-center justify-center p-8 transition-all duration-200 ${isDragging ? 'border-blue-500 bg-blue-50' : isExtracting ? 'border-blue-300 bg-blue-50/50' : 'border-neutral-300 bg-neutral-50 hover:bg-neutral-100'}`}
                     >
                        <FileUp className={`${isExtracting || isDragging ? 'text-blue-500 animate-bounce' : 'text-neutral-400'} mb-3`} size={32} />
                        <p className="text-sm font-medium text-neutral-700 mb-1">{isDragging ? 'Drop file here' : 'Drag & drop HTML file here'}</p>
@@ -286,27 +327,16 @@ export default function AdminDashboard() {
                        <input type="file" accept=".html" disabled={isExtracting} onChange={handleFileSelect} className="text-sm text-neutral-600 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-medium file:bg-white file:border file:border-neutral-200 file:text-neutral-700 hover:file:bg-neutral-50 cursor-pointer disabled:opacity-50" />
                     </div>
                   ) : (
-                    // NEW: Paste Area with Floating AI Button
                     <div className="flex-grow flex flex-col relative">
-                      <textarea 
-                        value={pastedHtml} 
-                        onChange={(e) => setPastedHtml(e.target.value)} 
-                        className="flex-grow w-full p-4 border border-neutral-300 rounded-lg font-mono text-sm bg-neutral-50 focus:ring-2 focus:ring-blue-500 focus:outline-none resize-none pb-12" 
-                        placeholder="" 
-                      />
-                      <button 
-                        type="button" 
-                        onClick={() => extractMetadataFromText(pastedHtml)}
-                        disabled={isExtracting || !pastedHtml.trim()}
-                        className="absolute bottom-4 right-4 bg-white border border-neutral-200 shadow-sm text-neutral-700 hover:bg-neutral-50 px-3 py-1.5 rounded-md text-xs font-medium flex items-center gap-1.5 transition-colors disabled:opacity-50"
-                      >
+                      <textarea value={pastedHtml} onChange={(e) => setPastedHtml(e.target.value)} className="flex-grow w-full p-4 border border-neutral-300 rounded-lg font-mono text-sm bg-neutral-50 focus:ring-2 focus:ring-blue-500 focus:outline-none resize-none pb-12" placeholder="" />
+                      <button type="button" onClick={() => extractMetadataFromText(pastedHtml)} disabled={isExtracting || !pastedHtml.trim()} className="absolute bottom-4 right-4 bg-white border border-neutral-200 shadow-sm text-neutral-700 hover:bg-neutral-50 px-3 py-1.5 rounded-md text-xs font-medium flex items-center gap-1.5 transition-colors disabled:opacity-50">
                         <Sparkles size={14} className="text-blue-600" /> Auto-Fill Details
                       </button>
                     </div>
                   )}
                 </div>
 
-                <button type="submit" disabled={status?.type === "loading" || isExtracting} className="w-full bg-neutral-900 text-white font-medium py-3 rounded-lg hover:bg-neutral-800 transition disabled:opacity-50">
+                <button type="submit" disabled={status?.type === "loading" || isExtracting || isGenerating} className="w-full bg-neutral-900 text-white font-medium py-3 rounded-lg hover:bg-neutral-800 transition disabled:opacity-50">
                   {status?.type === "loading" ? "Publishing..." : isExtracting ? "Analyzing..." : "Publish Roadmap"}
                 </button>
               </div>
@@ -344,14 +374,79 @@ export default function AdminDashboard() {
                       </td>
                     </tr>
                   ))}
+                  {roadmaps.length === 0 && (
+                    <tr>
+                      <td colSpan={3} className="px-6 py-12 text-center text-neutral-400">
+                        <FileText className="mx-auto mb-3 opacity-20" size={48} />
+                        Your library is empty.
+                      </td>
+                    </tr>
+                  )}
                 </tbody>
               </table>
             </div>
           </div>
         )}
+
       </div>
-      
-      {/* Edit Modal code remains exactly the same, omitted here to save space but keep it in your file if you copy over section by section, or I can provide the full file if needed! */}
+
+      {/* --- EDIT MODAL OVERLAY --- */}
+      {editingRoadmap && (
+        <div className="fixed inset-0 z-50 bg-neutral-900/40 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white w-full max-w-2xl rounded-2xl shadow-xl overflow-hidden flex flex-col max-h-[90vh]">
+            <div className="px-6 py-4 border-b border-neutral-100 flex items-center justify-between bg-neutral-50">
+              <h2 className="text-lg font-medium text-neutral-900 flex items-center gap-2"><Pencil size={18} /> Edit Roadmap</h2>
+              <button onClick={() => setEditingRoadmap(null)} className="text-neutral-400 hover:text-neutral-600 p-1"><X size={20} /></button>
+            </div>
+            
+            <form onSubmit={handleEditSubmit} className="p-6 overflow-y-auto flex-grow space-y-5 text-sm">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block font-medium text-neutral-700 mb-1">Title</label>
+                  <input type="text" required value={editingRoadmap.title} onChange={(e) => setEditingRoadmap({...editingRoadmap, title: e.target.value})} className="w-full p-2 border border-neutral-300 rounded-lg focus:ring-2 focus:ring-blue-500" />
+                </div>
+                <div>
+                  <label className="block font-medium text-neutral-700 mb-1">Category</label>
+                  <input type="text" required value={editingRoadmap.category} onChange={(e) => setEditingRoadmap({...editingRoadmap, category: e.target.value})} className="w-full p-2 border border-neutral-300 rounded-lg focus:ring-2 focus:ring-blue-500" />
+                </div>
+              </div>
+              <div>
+                <label className="block font-medium text-neutral-700 mb-1">Description</label>
+                <textarea rows={3} required value={editingRoadmap.description} onChange={(e) => setEditingRoadmap({...editingRoadmap, description: e.target.value})} className="w-full p-2 border border-neutral-300 rounded-lg focus:ring-2 focus:ring-blue-500" />
+              </div>
+
+              <div className="p-4 border border-neutral-200 rounded-xl bg-neutral-50 space-y-3">
+                <label className="block font-medium text-neutral-900">Update Content Source</label>
+                <select value={editUploadMethod} onChange={(e: any) => setEditUploadMethod(e.target.value)} className="w-full p-2 border border-neutral-300 rounded-lg bg-white">
+                  <option value="keep">Keep existing HTML file</option>
+                  <option value="file">Upload a new file</option>
+                  <option value="paste">Paste new HTML code</option>
+                </select>
+
+                {editUploadMethod === "file" && (
+                   <input type="file" accept=".html" onChange={(e) => setEditFile(e.target.files?.[0] || null)} className="w-full p-2 border border-neutral-300 rounded-lg bg-white file:mr-3 file:rounded-md file:border-0 file:bg-blue-50 file:text-blue-700 file:px-3 file:py-1 text-sm" />
+                )}
+                {editUploadMethod === "paste" && (
+                   <textarea rows={4} value={editPastedHtml} onChange={(e) => setEditPastedHtml(e.target.value)} className="w-full p-2 border border-neutral-300 rounded-lg font-mono text-xs bg-white" placeholder="Paste updated HTML here..." />
+                )}
+              </div>
+
+              <div className="pt-2 flex justify-end gap-3">
+                <button type="button" onClick={() => setEditingRoadmap(null)} className="px-5 py-2 rounded-lg font-medium text-neutral-600 hover:bg-neutral-100 transition-colors">Cancel</button>
+                <button type="submit" disabled={status?.type === "loading"} className="px-5 py-2 rounded-lg font-medium text-white bg-blue-600 hover:bg-blue-700 transition-colors disabled:opacity-50">
+                  {status?.type === "loading" ? "Saving..." : "Save Changes"}
+                </button>
+              </div>
+              
+              {status && (
+                <div className={`mt-2 text-center font-medium ${status.type === 'error' ? 'text-red-600' : 'text-blue-600'}`}>
+                  {status.msg}
+                </div>
+              )}
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
