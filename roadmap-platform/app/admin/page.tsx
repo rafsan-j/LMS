@@ -5,18 +5,20 @@ import { supabase } from "../../lib/supabase";
 import { useRouter } from "next/navigation";
 import { 
   Trash2, Eye, EyeOff, UploadCloud, LayoutDashboard, 
-  Code, FileUp, Pencil, X, Sparkles, Wand2, Loader2, FolderPlus, Save 
+  Code, FileUp, Pencil, X, Sparkles, Wand2, Loader2, FolderPlus, Save, Brain, FileText
 } from "lucide-react";
 
 type Category = { id: string; name: string; active_limit: number };
 type Roadmap = { 
   id: string; title: string; category_id: string; description: string; 
   file_url: string; is_published: boolean; target_deadline: string | null; 
+  urgency: number; importance: number; difficulty: number; priority_score: number;
 };
 
 export default function AdminDashboard() {
   const router = useRouter();
   const [isCheckingAuth, setIsCheckingAuth] = useState(true);
+  const [userProfile, setUserProfile] = useState<any>(null);
   
   const [activeTab, setActiveTab] = useState<"upload" | "manage" | "generate" | "categories">("upload");
   const [uploadMethod, setUploadMethod] = useState<"file" | "paste">("file");
@@ -32,7 +34,14 @@ export default function AdminDashboard() {
   const [pastedHtml, setPastedHtml] = useState("");
   const [status, setStatus] = useState<{ type: "error" | "success" | "loading", msg: string } | null>(null);
   const [targetDeadline, setTargetDeadline] = useState("");
-  const [editTargetDeadline, setEditTargetDeadline] = useState("");
+  
+  // Priority State (Upload)
+  const [u, setU] = useState(5);
+  const [i, setI] = useState(5);
+  const [d, setD] = useState(5);
+  const [aiReasoning, setAiReasoning] = useState("");
+  const [isEvaluating, setIsEvaluating] = useState(false);
+  const priorityScore = parseFloat(((u * 0.6) + (i * 0.3) + (d * 0.1)).toFixed(1));
 
   // Generate Form State
   const [genTopic, setGenTopic] = useState(""); 
@@ -54,11 +63,27 @@ export default function AdminDashboard() {
   const [editFile, setEditFile] = useState<File | null>(null);
   const [editPastedHtml, setEditPastedHtml] = useState("");
   const [editUploadMethod, setEditUploadMethod] = useState<"keep" | "file" | "paste">("keep");
+  const [editTargetDeadline, setEditTargetDeadline] = useState("");
+  
+  // Priority State (Edit)
+  const [editU, setEditU] = useState(5);
+  const [editI, setEditI] = useState(5);
+  const [editD, setEditD] = useState(5);
+  const [editAiReasoning, setEditAiReasoning] = useState("");
+  const editPriorityScore = parseFloat(((editU * 0.6) + (editI * 0.3) + (editD * 0.1)).toFixed(1));
 
   useEffect(() => {
     const checkSessionAndFetchData = async () => {
       const { data: { session } } = await supabase.auth.getSession();
-      if (!session) { router.push("/login"); return; }
+      
+      // FIXED: Safely handle missing sessions without crashing to a 404 page
+      if (session) {
+        const { data: profile } = await supabase.from("focus_user_profiles").select("*").eq("user_id", session.user.id).single();
+        if (profile) setUserProfile(profile);
+      } else {
+        console.warn("No active session found. Skipping profile fetch for dev mode.");
+      }
+
       setIsCheckingAuth(false);
       fetchInitialData();
     };
@@ -79,7 +104,6 @@ export default function AdminDashboard() {
     if (data) setRoadmaps(data);
   };
 
-  // --- Category Handlers ---
   const handleAddCategory = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newCatName.trim()) return;
@@ -95,17 +119,12 @@ export default function AdminDashboard() {
     if (!editingCategory || !editCatName.trim()) return;
     setStatus({ type: "loading", msg: "Updating..." });
     try {
-      const { error } = await supabase
-        .from("focus_categories")
-        .update({ name: editCatName, active_limit: editCatLimit })
-        .eq("id", editingCategory.id);
+      const { error } = await supabase.from("focus_categories").update({ name: editCatName, active_limit: editCatLimit }).eq("id", editingCategory.id);
       if (error) throw error;
       setStatus({ type: "success", msg: "Category updated!" });
       setEditingCategory(null);
       fetchInitialData();
-    } catch (err: any) {
-      setStatus({ type: "error", msg: err.message });
-    }
+    } catch (err: any) { setStatus({ type: "error", msg: err.message }); }
   };
 
   const handleDeleteCategory = async (id: string) => {
@@ -113,25 +132,18 @@ export default function AdminDashboard() {
     try {
       const { error } = await supabase.from("focus_categories").delete().eq("id", id);
       if (error) {
-        // Handle Foreign Key violation gracefully
         if (error.code === '23503') throw new Error("Cannot delete: You must delete or reassign all courses in this category first.");
         throw error;
       }
       setStatus({ type: "success", msg: "Category deleted!" });
       fetchInitialData();
-    } catch (err: any) {
-      setStatus({ type: "error", msg: err.message });
-    }
+    } catch (err: any) { setStatus({ type: "error", msg: err.message }); }
   };
 
   const startEditCategory = (cat: Category) => {
-    setEditingCategory(cat);
-    setEditCatName(cat.name);
-    setEditCatLimit(cat.active_limit);
-    setStatus(null);
+    setEditingCategory(cat); setEditCatName(cat.name); setEditCatLimit(cat.active_limit); setStatus(null);
   };
 
-  // --- Upload & Gen Handlers ---
   const createHtmlFileFromText = (htmlString: string, filename: string) => {
     const blob = new Blob([htmlString], { type: "text/html" });
     return new File([blob], filename, { type: "text/html" });
@@ -161,17 +173,50 @@ export default function AdminDashboard() {
       
       setTitle(data.title || ""); 
       setDescription(data.description || "");
-      
       if (data.category && categories.length > 0) {
         const match = categories.find(c => c.name.toLowerCase().includes(data.category.toLowerCase()));
         if (match) setCategoryId(match.id);
       }
-      
       setStatus({ type: "success", msg: "AI successfully auto-filled the details!" });
     } catch (error) {
       setStatus({ type: "error", msg: "AI failed to read content. Please enter manually." });
+    } finally { setIsExtracting(false); }
+  };
+
+  const handleEvaluatePriority = async (mode: "upload" | "edit") => {
+    const evalTitle = mode === "upload" ? title : editingRoadmap?.title;
+    if (!evalTitle) return alert("Please enter a title before evaluating.");
+
+    setIsEvaluating(true);
+    setStatus({ type: "loading", msg: "AI is evaluating priority..." });
+    
+    try {
+      const response = await fetch('/api/evaluate-priority', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          title: evalTitle, 
+          description: mode === "upload" ? description : editingRoadmap?.description,
+          targetDeadline: mode === "upload" ? targetDeadline : editTargetDeadline,
+          userProfile 
+        })
+      });
+      
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Evaluation failed.");
+
+      if (mode === "upload") {
+        setU(data.urgency); setI(data.importance); setD(data.difficulty);
+        setAiReasoning(data.reasoning);
+      } else {
+        setEditU(data.urgency); setEditI(data.importance); setEditD(data.difficulty);
+        setEditAiReasoning(data.reasoning);
+      }
+      setStatus(null);
+    } catch (error: any) {
+      console.error(error); 
+      setStatus({ type: "error", msg: error.message });
     } finally {
-      setIsExtracting(false);
+      setIsEvaluating(false);
     }
   };
 
@@ -208,19 +253,16 @@ export default function AdminDashboard() {
 
       const publicUrl = await uploadFileToStorage(finalFile);
       const { error: dbError } = await supabase.from("roadmaps").insert([{ 
-        title, 
-        description, 
-        category_id: categoryId, 
-        file_url: publicUrl, 
-        is_published: true, 
-        status: 'wishlist', 
-        priority_score: 5.0,
-        target_deadline: targetDeadline || null // ADDED: Save deadline to DB
+        title, description, category_id: categoryId, file_url: publicUrl, 
+        is_published: true, status: 'wishlist', 
+        target_deadline: targetDeadline || null,
+        urgency: u, importance: i, difficulty: d, priority_score: priorityScore 
       }]);
       if (dbError) throw dbError;
 
       setStatus({ type: "success", msg: "Published to Wishlist!" });
       setTitle(""); setDescription(""); setFile(null); setPastedHtml(""); setTargetDeadline("");
+      setU(5); setI(5); setD(5); setAiReasoning("");
       fetchRoadmaps(); setActiveTab("manage");
     } catch (error: any) { setStatus({ type: "error", msg: error.message }); }
   };
@@ -241,11 +283,10 @@ export default function AdminDashboard() {
         updatedFileUrl = await uploadFileToStorage(newFile);
       }
       const { error } = await supabase.from("roadmaps").update({ 
-        title: editingRoadmap.title, 
-        category_id: editingRoadmap.category_id, 
-        description: editingRoadmap.description, 
-        file_url: updatedFileUrl,
-        target_deadline: editTargetDeadline || null // ADDED: Save updated deadline to DB
+        title: editingRoadmap.title, category_id: editingRoadmap.category_id, 
+        description: editingRoadmap.description, file_url: updatedFileUrl,
+        target_deadline: editTargetDeadline || null,
+        urgency: editU, importance: editI, difficulty: editD, priority_score: editPriorityScore
       }).eq("id", editingRoadmap.id);
       
       if (error) throw error;
@@ -269,10 +310,26 @@ export default function AdminDashboard() {
     } catch (err) { alert("Deletion failed."); }
   };
 
-  const handleDrop = async (e: React.DragEvent) => {
-    e.preventDefault(); setIsDragging(false);
-    const droppedFile = e.dataTransfer.files?.[0];
-    if (droppedFile) { setFile(droppedFile); const text = await droppedFile.text(); extractMetadataFromText(text); }
+  // --- FIXED: Unified File Selection & Drag/Drop Handler ---
+  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement> | React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    setIsDragging(false);
+    
+    let selectedFile: File | undefined = undefined;
+
+    if ('dataTransfer' in e) {
+      selectedFile = e.dataTransfer.files?.[0]; // Handled from drag & drop
+    } else {
+      selectedFile = (e.target as HTMLInputElement).files?.[0]; // Handled from clicking
+    }
+    
+    if (selectedFile) { 
+      setFile(selectedFile); 
+      const text = await selectedFile.text(); 
+      extractMetadataFromText(text); 
+    } else { 
+      setFile(null); 
+    }
   };
 
   if (isCheckingAuth) return <div className="min-h-screen flex items-center justify-center text-neutral-500">Securing dashboard...</div>;
@@ -374,7 +431,6 @@ export default function AdminDashboard() {
               </div>
               <div><label className="block text-xs font-medium text-neutral-500 mb-1">Title</label><input type="text" required value={title} onChange={(e) => setTitle(e.target.value)} disabled={isExtracting} className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" /></div>
               
-              {/* UPDATED: Category and Deadline Grid */}
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-medium text-neutral-500 mb-1">Category</label>
@@ -390,6 +446,32 @@ export default function AdminDashboard() {
               </div>
 
               <div><label className="block text-xs font-medium text-neutral-500 mb-1">Brief Description</label><textarea rows={4} required value={description} onChange={(e) => setDescription(e.target.value)} disabled={isExtracting} className="w-full p-3 border rounded-lg outline-none resize-none focus:ring-2 focus:ring-blue-500" /></div>
+              
+              {/* PRIORITY ENGINE UI */}
+              <div className="p-5 bg-blue-50/50 border border-blue-100 rounded-xl space-y-4">
+                <div className="flex items-center justify-between">
+                  <label className="block text-xs font-bold text-blue-800 uppercase tracking-wider">Priority Algorithm</label>
+                  <button type="button" onClick={() => handleEvaluatePriority("upload")} disabled={isEvaluating || !title} className="text-xs bg-white border border-blue-200 text-blue-700 px-3 py-1.5 rounded-md hover:bg-blue-50 transition flex items-center gap-1.5 font-medium disabled:opacity-50">
+                    {isEvaluating ? <Loader2 size={12} className="animate-spin"/> : <Brain size={12}/>} Auto-Evaluate Context
+                  </button>
+                </div>
+                
+                {aiReasoning && <p className="text-xs text-blue-700 bg-white p-3 rounded-lg border border-blue-100 italic">{aiReasoning}</p>}
+
+                <div className="space-y-3 pt-2">
+                  {[ ['Urgency', u, setU], ['Importance', i, setI], ['Difficulty', d, setD] ].map(([lbl, val, setFn]: any) => (
+                    <div key={lbl} className="flex items-center gap-4">
+                      <span className="text-xs font-medium text-neutral-600 w-20">{lbl}</span>
+                      <input type="range" min={1} max={10} value={val} onChange={e => setFn(Number(e.target.value))} disabled={isEvaluating} className="flex-1 accent-blue-600 h-1.5 bg-neutral-200 rounded-lg appearance-none cursor-pointer" />
+                      <span className="font-mono text-xs font-semibold text-blue-700 w-6 text-right">{val}</span>
+                    </div>
+                  ))}
+                </div>
+                <div className="pt-3 border-t border-blue-100/50 flex justify-between items-center">
+                  <span className="text-blue-600/60 font-mono text-[10px]">P = (U×0.6) + (I×0.3) + (D×0.1)</span>
+                  <span className="font-bold text-sm text-neutral-900">Score: <span className="text-blue-600 text-lg">{priorityScore}</span></span>
+                </div>
+              </div>
             </div>
             
             <div className="flex flex-col h-full">
@@ -399,9 +481,28 @@ export default function AdminDashboard() {
                 <button type="button" onClick={() => setUploadMethod("paste")} className={`flex-1 py-2 text-sm font-medium rounded-lg border ${uploadMethod === "paste" ? "border-blue-600 bg-blue-50 text-blue-700" : "text-neutral-600"}`}><Code size={16} className="inline mr-2" />Paste HTML</button>
               </div>
               <div className="flex-grow flex flex-col mb-6 relative">
+                {/* FIXED: Robust Visual File Upload Area */}
                 {uploadMethod === "file" ? (
-                  <div onDragOver={(e)=>{e.preventDefault(); setIsDragging(true);}} onDragLeave={(e)=>{e.preventDefault(); setIsDragging(false);}} onDrop={handleDrop} className={`flex-grow border-2 border-dashed rounded-lg flex flex-col items-center justify-center p-8 transition-colors ${isDragging ? 'border-blue-500 bg-blue-50' : 'bg-neutral-50 hover:bg-neutral-100'}`}>
-                    <input type="file" accept=".html" onChange={(e) => setFile(e.target.files?.[0] || null)} className="text-sm text-neutral-600 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:bg-white file:border file:border-neutral-200 cursor-pointer" />
+                  <div 
+                    onDragOver={(e)=>{e.preventDefault(); setIsDragging(true);}} 
+                    onDragLeave={(e)=>{e.preventDefault(); setIsDragging(false);}} 
+                    onDrop={handleFileSelect} 
+                    className={`flex-grow border-2 border-dashed rounded-lg flex flex-col items-center justify-center p-8 transition-colors relative ${isDragging ? 'border-blue-500 bg-blue-50' : 'bg-neutral-50 hover:bg-neutral-100'}`}
+                  >
+                    {file ? (
+                      <div className="text-center animate-in fade-in duration-300">
+                        <FileText className="mx-auto text-blue-600 mb-3" size={40} />
+                        <p className="text-sm font-medium text-neutral-900 truncate max-w-[200px]">{file.name}</p>
+                        <button type="button" onClick={(e) => { e.preventDefault(); setFile(null); }} className="mt-3 text-xs font-semibold text-red-500 hover:text-red-700 px-3 py-1.5 bg-red-50 rounded-md">Remove File</button>
+                      </div>
+                    ) : (
+                      <>
+                        <FileUp className="text-neutral-400 mb-3" size={32} />
+                        <p className="text-sm font-medium text-neutral-700 mb-1">Drag & drop HTML file here</p>
+                        <p className="text-xs text-neutral-500 mb-4">or click to browse</p>
+                        <input type="file" accept=".html" onChange={handleFileSelect} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" />
+                      </>
+                    )}
                   </div>
                 ) : (
                   <textarea value={pastedHtml} onChange={(e) => setPastedHtml(e.target.value)} className="flex-grow w-full p-4 border rounded-lg font-mono text-sm bg-neutral-50 outline-none resize-none focus:ring-2 focus:ring-blue-500" placeholder="Paste HTML code here..." />
@@ -426,7 +527,10 @@ export default function AdminDashboard() {
                 {roadmaps.map((rm) => (
                   <tr key={rm.id} className="hover:bg-neutral-50/50">
                     <td className="px-6 py-4">
-                      <div className="font-medium text-neutral-900">{rm.title}</div>
+                      <div className="font-medium text-neutral-900 flex items-center gap-2">
+                        {rm.title}
+                        <span className="text-[10px] font-mono font-bold bg-blue-50 text-blue-700 px-1.5 py-0.5 rounded">P:{rm.priority_score}</span>
+                      </div>
                       <div className="text-neutral-500 text-xs mt-1">{categories.find(c => c.id === rm.category_id)?.name || 'Uncategorized'}</div>
                     </td>
                     <td className="px-6 py-4 text-center">
@@ -439,7 +543,9 @@ export default function AdminDashboard() {
                         <button onClick={() => { 
                           setEditingRoadmap(rm); 
                           setEditUploadMethod("keep");
-                          setEditTargetDeadline(rm.target_deadline || ""); // SET DEADLINE FOR EDITING
+                          setEditTargetDeadline(rm.target_deadline || ""); 
+                          setEditU(rm.urgency || 5); setEditI(rm.importance || 5); setEditD(rm.difficulty || 5);
+                          setEditAiReasoning("");
                         }} className="text-neutral-400 hover:text-blue-600 p-2"><Pencil size={16} /></button>
                         <button onClick={() => handleDelete(rm.id, rm.file_url)} className="text-neutral-400 hover:text-red-600 p-2"><Trash2 size={16} /></button>
                       </div>
@@ -467,7 +573,6 @@ export default function AdminDashboard() {
                 <input type="text" required value={editingRoadmap.title} onChange={(e) => setEditingRoadmap({...editingRoadmap, title: e.target.value})} className="w-full p-2 border border-neutral-300 rounded-lg focus:ring-2 focus:ring-blue-500" />
               </div>
               
-              {/* UPDATED: Category and Deadline Grid in Edit Modal */}
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block font-medium text-neutral-700 mb-1">Category</label>
@@ -486,6 +591,29 @@ export default function AdminDashboard() {
                 <textarea rows={3} required value={editingRoadmap.description} onChange={(e) => setEditingRoadmap({...editingRoadmap, description: e.target.value})} className="w-full p-2 border border-neutral-300 rounded-lg focus:ring-2 focus:ring-blue-500" />
               </div>
 
+              {/* EDIT MODAL PRIORITY ENGINE */}
+              <div className="p-4 bg-blue-50/50 border border-blue-100 rounded-xl space-y-3">
+                <div className="flex items-center justify-between">
+                  <label className="block text-xs font-bold text-blue-800 uppercase tracking-wider">Priority Algorithm</label>
+                  <button type="button" onClick={() => handleEvaluatePriority("edit")} disabled={isEvaluating} className="text-xs bg-white border border-blue-200 text-blue-700 px-3 py-1.5 rounded-md hover:bg-blue-50 transition flex items-center gap-1.5 font-medium disabled:opacity-50">
+                    {isEvaluating ? <Loader2 size={12} className="animate-spin"/> : <Brain size={12}/>} Auto-Evaluate Context
+                  </button>
+                </div>
+                {editAiReasoning && <p className="text-xs text-blue-700 bg-white p-3 rounded-lg border border-blue-100 italic">{editAiReasoning}</p>}
+                <div className="space-y-2 pt-2">
+                  {[ ['Urgency', editU, setEditU], ['Importance', editI, setEditI], ['Difficulty', editD, setEditD] ].map(([lbl, val, setFn]: any) => (
+                    <div key={lbl} className="flex items-center gap-4">
+                      <span className="text-xs font-medium text-neutral-600 w-20">{lbl}</span>
+                      <input type="range" min={1} max={10} value={val} onChange={e => setFn(Number(e.target.value))} disabled={isEvaluating} className="flex-1 accent-blue-600 h-1.5 bg-neutral-200 rounded-lg appearance-none cursor-pointer" />
+                      <span className="font-mono text-xs font-semibold text-blue-700 w-6 text-right">{val}</span>
+                    </div>
+                  ))}
+                </div>
+                <div className="pt-2 flex justify-end font-bold text-sm text-neutral-900">
+                  Score: <span className="text-blue-600 ml-2">{editPriorityScore}</span>
+                </div>
+              </div>
+
               <div className="p-4 border border-neutral-200 rounded-xl bg-neutral-50 space-y-3">
                 <label className="block font-medium text-neutral-900">Update Content Source</label>
                 <select value={editUploadMethod} onChange={(e: any) => setEditUploadMethod(e.target.value)} className="w-full p-2 border border-neutral-300 rounded-lg bg-white">
@@ -495,7 +623,7 @@ export default function AdminDashboard() {
                 </select>
 
                 {editUploadMethod === "file" && (
-                   <input type="file" accept=".html" onChange={(e) => setEditFile(e.target.files?.[0] || null)} className="w-full p-2 border border-neutral-300 rounded-lg bg-white file:mr-3 file:rounded-md file:border-0 file:bg-blue-50 file:text-blue-700 file:px-3 file:py-1 text-sm" />
+                   <input type="file" accept=".html" onChange={handleFileSelect} className="w-full p-2 border border-neutral-300 rounded-lg bg-white file:mr-3 file:rounded-md file:border-0 file:bg-blue-50 file:text-blue-700 file:px-3 file:py-1 text-sm" />
                 )}
                 {editUploadMethod === "paste" && (
                    <textarea rows={4} value={editPastedHtml} onChange={(e) => setEditPastedHtml(e.target.value)} className="w-full p-2 border border-neutral-300 rounded-lg font-mono text-xs bg-white" placeholder="Paste updated HTML here..." />

@@ -1,25 +1,22 @@
-import type { Metadata, Viewport } from 'next'
-import './globals.css'
-import "katex/dist/katex.min.css"
-import NavigationShell from './components/NavigationShell'
+import "./globals.css";
+import NavigationShell from "./components/NavigationShell";
 
-export const metadata: Metadata = {
-  title: 'Focus OS',
-  description: 'Distraction-free personal learning management',
-  manifest: '/manifest.json',
-  appleWebApp: { capable: true, statusBarStyle: 'black-translucent', title: 'Focus OS' },
-}
+export const metadata = {
+  title: "Focus OS",
+  description: "A dynamic learning operating system.",
+};
 
-export const viewport: Viewport = { themeColor: '#FDFDFD', width: 'device-width', initialScale: 1 }
-
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default function RootLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
   return (
+    // Both HTML and Body tags need suppressHydrationWarning to block extensions
     <html lang="en" suppressHydrationWarning>
-      <body>
-        <NavigationShell>
-          {children}
-        </NavigationShell>
+      <body suppressHydrationWarning>
+        <NavigationShell>{children}</NavigationShell>
       </body>
     </html>
-  )
+  );
 }
