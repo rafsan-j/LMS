@@ -76,7 +76,6 @@ export default function AdminDashboard() {
     const checkSessionAndFetchData = async () => {
       const { data: { session } } = await supabase.auth.getSession();
       
-      // FIXED: Safely handle missing sessions without crashing to a 404 page
       if (session) {
         const { data: profile } = await supabase.from("focus_user_profiles").select("*").eq("user_id", session.user.id).single();
         if (profile) setUserProfile(profile);
@@ -310,7 +309,6 @@ export default function AdminDashboard() {
     } catch (err) { alert("Deletion failed."); }
   };
 
-  // --- FIXED: Unified File Selection & Drag/Drop Handler ---
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement> | React.DragEvent<HTMLDivElement>) => {
     e.preventDefault();
     setIsDragging(false);
@@ -318,9 +316,9 @@ export default function AdminDashboard() {
     let selectedFile: File | undefined = undefined;
 
     if ('dataTransfer' in e) {
-      selectedFile = e.dataTransfer.files?.[0]; // Handled from drag & drop
+      selectedFile = e.dataTransfer.files?.[0]; 
     } else {
-      selectedFile = (e.target as HTMLInputElement).files?.[0]; // Handled from clicking
+      selectedFile = (e.target as HTMLInputElement).files?.[0]; 
     }
     
     if (selectedFile) { 
@@ -332,318 +330,325 @@ export default function AdminDashboard() {
     }
   };
 
-  if (isCheckingAuth) return <div className="min-h-screen flex items-center justify-center text-neutral-500">Securing dashboard...</div>;
+  if (isCheckingAuth) return <div className="min-h-screen flex items-center justify-center bg-[#0a0a0a] text-neutral-400">Securing dashboard...</div>;
 
   return (
-    <div className="p-8 max-w-5xl mx-auto">
-      {/* HEADER & NAV */}
-      <div className="flex flex-col md:flex-row md:items-end justify-between mb-8 gap-4">
-        <div>
-          <h1 className="text-3xl font-light tracking-tight mb-1">Curriculum Admin</h1>
-          <p className="text-neutral-500 text-sm">Generate, upload, and manage your raw course files.</p>
+    <div className="min-h-screen bg-[#0a0a0a] text-white p-6 md:p-10 flex flex-col items-center">
+      <div className="w-full max-w-5xl">
+        {/* HEADER & NAV */}
+        <div className="flex flex-col md:flex-row md:items-end justify-between mb-8 gap-4">
+          <div>
+            <h1 className="text-3xl font-bold tracking-tight mb-2 text-white">Curriculum Admin</h1>
+            <p className="text-neutral-400 text-sm">Generate, upload, and manage your raw course files.</p>
+          </div>
+          <div className="flex bg-neutral-900 p-1 rounded-lg border border-neutral-800 w-fit overflow-x-auto max-w-full">
+            <button onClick={() => { setActiveTab("generate"); setStatus(null); }} className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-md transition-all whitespace-nowrap ${activeTab === "generate" ? "bg-neutral-800 text-white border border-neutral-700 shadow-sm" : "text-neutral-400 hover:text-neutral-200 hover:bg-neutral-800/50"}`}><Wand2 size={16} /> Generate</button>
+            <button onClick={() => { setActiveTab("upload"); setStatus(null); }} className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-md transition-all whitespace-nowrap ${activeTab === "upload" ? "bg-neutral-800 text-white border border-neutral-700 shadow-sm" : "text-neutral-400 hover:text-neutral-200 hover:bg-neutral-800/50"}`}><UploadCloud size={16} /> Publish</button>
+            <button onClick={() => { setActiveTab("manage"); setStatus(null); }} className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-md transition-all whitespace-nowrap ${activeTab === "manage" ? "bg-neutral-800 text-white border border-neutral-700 shadow-sm" : "text-neutral-400 hover:text-neutral-200 hover:bg-neutral-800/50"}`}><LayoutDashboard size={16} /> Manage</button>
+            <button onClick={() => { setActiveTab("categories"); setStatus(null); }} className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-md transition-all whitespace-nowrap ${activeTab === "categories" ? "bg-neutral-800 text-white border border-neutral-700 shadow-sm" : "text-neutral-400 hover:text-neutral-200 hover:bg-neutral-800/50"}`}><FolderPlus size={16} /> Categories</button>
+          </div>
         </div>
-        <div className="flex bg-neutral-100 p-1 rounded-lg border border-neutral-200 w-fit overflow-x-auto max-w-full">
-          <button onClick={() => { setActiveTab("generate"); setStatus(null); }} className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-md transition-all whitespace-nowrap ${activeTab === "generate" ? "bg-white shadow-sm text-blue-700" : "text-neutral-500 hover:text-neutral-700"}`}><Wand2 size={16} /> Generate</button>
-          <button onClick={() => { setActiveTab("upload"); setStatus(null); }} className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-md transition-all whitespace-nowrap ${activeTab === "upload" ? "bg-white shadow-sm text-neutral-900" : "text-neutral-500 hover:text-neutral-700"}`}><UploadCloud size={16} /> Publish</button>
-          <button onClick={() => { setActiveTab("manage"); setStatus(null); }} className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-md transition-all whitespace-nowrap ${activeTab === "manage" ? "bg-white shadow-sm text-neutral-900" : "text-neutral-500 hover:text-neutral-700"}`}><LayoutDashboard size={16} /> Manage</button>
-          <button onClick={() => { setActiveTab("categories"); setStatus(null); }} className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-md transition-all whitespace-nowrap ${activeTab === "categories" ? "bg-white shadow-sm text-neutral-900" : "text-neutral-500 hover:text-neutral-700"}`}><FolderPlus size={16} /> Categories</button>
-        </div>
-      </div>
 
-      {/* CATEGORIES TAB */}
-      {activeTab === "categories" && (
-        <div className="bg-white p-8 rounded-2xl shadow-sm border border-neutral-200 max-w-2xl mx-auto">
-           <h2 className="text-xl font-bold mb-6">Manage Categories</h2>
-           <form onSubmit={handleAddCategory} className="flex gap-3 mb-8">
-              <input type="text" value={newCatName} onChange={e => setNewCatName(e.target.value)} placeholder="New Category (e.g., Physics)" className="flex-1 p-3 border rounded-xl outline-none focus:ring-2 focus:ring-blue-500" required />
-              <div className="flex items-center gap-2 border rounded-xl px-4 bg-neutral-50">
-                <span className="text-sm text-neutral-500">Slot Limit:</span>
-                <input type="number" min={1} max={10} value={newCatLimit} onChange={e => setNewCatLimit(Number(e.target.value))} className="w-12 bg-transparent font-semibold outline-none" />
-              </div>
-              <button type="submit" className="bg-neutral-900 text-white px-6 py-3 rounded-xl font-semibold hover:bg-neutral-800">Add</button>
-            </form>
-            
-            <div className="space-y-3">
-              {categories.map(cat => (
-                <div key={cat.id} className="flex flex-col sm:flex-row sm:items-center justify-between p-4 bg-neutral-50 border border-neutral-100 rounded-xl gap-4">
-                  {editingCategory?.id === cat.id ? (
-                    <form onSubmit={handleUpdateCategory} className="flex flex-1 items-center gap-3">
-                      <input type="text" value={editCatName} onChange={e => setEditCatName(e.target.value)} className="flex-1 p-2 border rounded-lg focus:ring-2 focus:ring-blue-500" required autoFocus />
-                      <div className="flex items-center gap-2 bg-white border rounded-lg px-2 py-1">
-                        <span className="text-xs text-neutral-500">Limit:</span>
-                        <input type="number" min={1} max={10} value={editCatLimit} onChange={e => setEditCatLimit(Number(e.target.value))} className="w-10 bg-transparent text-sm font-semibold outline-none" />
-                      </div>
-                      <button type="submit" className="p-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"><Save size={16}/></button>
-                      <button type="button" onClick={() => setEditingCategory(null)} className="p-2 bg-neutral-200 text-neutral-600 rounded-lg hover:bg-neutral-300"><X size={16}/></button>
-                    </form>
-                  ) : (
-                    <>
-                      <div className="flex items-center gap-3">
-                        <span className="font-medium text-neutral-900">{cat.name}</span>
-                        <span className="text-xs text-neutral-500 bg-white px-2.5 py-1 rounded-md border shadow-sm">Limit: {cat.active_limit}</span>
-                      </div>
-                      <div className="flex items-center gap-1">
-                        <button onClick={() => startEditCategory(cat)} className="p-2 text-neutral-400 hover:text-blue-600 rounded-md transition-colors"><Pencil size={16} /></button>
-                        <button onClick={() => handleDeleteCategory(cat.id)} className="p-2 text-neutral-400 hover:text-red-600 rounded-md transition-colors"><Trash2 size={16} /></button>
-                      </div>
-                    </>
-                  )}
+        {/* CATEGORIES TAB */}
+        {activeTab === "categories" && (
+          <div className="bg-neutral-900 p-8 rounded-2xl shadow-lg border border-neutral-800 max-w-2xl mx-auto animate-in fade-in">
+             <h2 className="text-xl font-bold mb-6 text-white">Manage Categories</h2>
+             <form onSubmit={handleAddCategory} className="flex gap-3 mb-8">
+                <input type="text" value={newCatName} onChange={e => setNewCatName(e.target.value)} placeholder="New Category (e.g., Physics)" className="flex-1 p-3 bg-neutral-950 border border-neutral-800 rounded-xl outline-none text-white placeholder-neutral-600 focus:border-blue-500/50" required />
+                <div className="flex items-center gap-2 border border-neutral-800 rounded-xl px-4 bg-neutral-950">
+                  <span className="text-sm text-neutral-500">Slot Limit:</span>
+                  <input type="number" min={1} max={10} value={newCatLimit} onChange={e => setNewCatLimit(Number(e.target.value))} className="w-12 bg-transparent font-semibold text-white outline-none" />
                 </div>
-              ))}
-              {categories.length === 0 && <p className="text-neutral-400 text-center py-4">No categories created yet.</p>}
-            </div>
-            {status && <div className={`mt-6 p-4 rounded-lg text-sm text-center font-medium ${status.type === 'error' ? 'bg-red-50 text-red-700' : 'bg-green-50 text-green-700'}`}>{status.msg}</div>}
-        </div>
-      )}
-
-      {/* GENERATE TAB */}
-      {activeTab === "generate" && (
-        <div className="bg-white p-8 rounded-2xl shadow-sm border border-neutral-200 max-w-2xl mx-auto">
-          <form onSubmit={handleGenerate} className="space-y-5">
-            <div>
-              <label className="block text-sm font-medium mb-1 text-neutral-700">Topic</label>
-              <input type="text" required value={genTopic} onChange={(e) => setGenTopic(e.target.value)} disabled={isGenerating} placeholder="e.g., Quantum Physics" className="w-full p-4 text-lg border rounded-xl focus:ring-2 focus:ring-blue-500 outline-none" />
-            </div>
-            <div>
-              <label className="block text-sm font-medium mb-1 text-neutral-700">Target Audience / Skill Level</label>
-              <input type="text" value={genLevel} onChange={(e) => setGenLevel(e.target.value)} disabled={isGenerating} placeholder="e.g., Absolute Beginner" className="w-full p-3 border rounded-xl focus:ring-2 focus:ring-blue-500 outline-none" />
-            </div>
-            <div>
-              <label className="block text-sm font-medium mb-1 text-neutral-700">Playlist URL (Optional)</label>
-              <input type="url" value={genUrl} onChange={(e) => setGenUrl(e.target.value)} disabled={isGenerating} placeholder="https://youtube.com/playlist?list=..." className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" />
-            </div>
-            <button type="submit" disabled={isGenerating || !genTopic.trim()} className="w-full bg-blue-600 text-white font-medium py-3.5 rounded-xl flex items-center justify-center gap-2 hover:bg-blue-700 disabled:opacity-50">
-              {isGenerating ? <Loader2 className="animate-spin" size={18} /> : <Sparkles size={18} />} 
-              {isGenerating ? "Architecting..." : "Generate Roadmap"}
-            </button>
-          </form>
-        </div>
-      )}
-
-      {/* UPLOAD TAB */}
-      {activeTab === "upload" && (
-        <div className="bg-white p-8 rounded-2xl shadow-sm border border-neutral-200">
-          <form onSubmit={handleUpload} className="grid grid-cols-1 lg:grid-cols-2 gap-10">
-            <div className="space-y-5">
-              <div className="flex items-center justify-between mb-1">
-                <label className="block text-sm font-medium text-neutral-700">Curriculum Details</label>
-                {isExtracting && <span className="text-xs text-blue-600 font-medium flex items-center gap-1 animate-pulse"><Sparkles size={12} /> AI Generating...</span>}
-              </div>
-              <div><label className="block text-xs font-medium text-neutral-500 mb-1">Title</label><input type="text" required value={title} onChange={(e) => setTitle(e.target.value)} disabled={isExtracting} className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" /></div>
+                <button type="submit" className="bg-white text-black px-6 py-3 rounded-xl font-semibold hover:bg-neutral-200 transition-colors">Add</button>
+              </form>
               
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-medium text-neutral-500 mb-1">Category</label>
-                  <select required value={categoryId} onChange={(e) => setCategoryId(e.target.value)} disabled={categories.length === 0} className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none bg-white">
-                    {categories.length === 0 && <option value="">No categories found. Create one first!</option>}
-                    {categories.map(cat => (<option key={cat.id} value={cat.id}>{cat.name}</option>))}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-neutral-500 mb-1">Target Deadline (Optional)</label>
-                  <input type="date" value={targetDeadline} onChange={(e) => setTargetDeadline(e.target.value)} disabled={isExtracting} className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none bg-white text-neutral-700" />
-                </div>
-              </div>
-
-              <div><label className="block text-xs font-medium text-neutral-500 mb-1">Brief Description</label><textarea rows={4} required value={description} onChange={(e) => setDescription(e.target.value)} disabled={isExtracting} className="w-full p-3 border rounded-lg outline-none resize-none focus:ring-2 focus:ring-blue-500" /></div>
-              
-              {/* PRIORITY ENGINE UI */}
-              <div className="p-5 bg-blue-50/50 border border-blue-100 rounded-xl space-y-4">
-                <div className="flex items-center justify-between">
-                  <label className="block text-xs font-bold text-blue-800 uppercase tracking-wider">Priority Algorithm</label>
-                  <button type="button" onClick={() => handleEvaluatePriority("upload")} disabled={isEvaluating || !title} className="text-xs bg-white border border-blue-200 text-blue-700 px-3 py-1.5 rounded-md hover:bg-blue-50 transition flex items-center gap-1.5 font-medium disabled:opacity-50">
-                    {isEvaluating ? <Loader2 size={12} className="animate-spin"/> : <Brain size={12}/>} Auto-Evaluate Context
-                  </button>
-                </div>
-                
-                {aiReasoning && <p className="text-xs text-blue-700 bg-white p-3 rounded-lg border border-blue-100 italic">{aiReasoning}</p>}
-
-                <div className="space-y-3 pt-2">
-                  {[ ['Urgency', u, setU], ['Importance', i, setI], ['Difficulty', d, setD] ].map(([lbl, val, setFn]: any) => (
-                    <div key={lbl} className="flex items-center gap-4">
-                      <span className="text-xs font-medium text-neutral-600 w-20">{lbl}</span>
-                      <input type="range" min={1} max={10} value={val} onChange={e => setFn(Number(e.target.value))} disabled={isEvaluating} className="flex-1 accent-blue-600 h-1.5 bg-neutral-200 rounded-lg appearance-none cursor-pointer" />
-                      <span className="font-mono text-xs font-semibold text-blue-700 w-6 text-right">{val}</span>
-                    </div>
-                  ))}
-                </div>
-                <div className="pt-3 border-t border-blue-100/50 flex justify-between items-center">
-                  <span className="text-blue-600/60 font-mono text-[10px]">P = (U×0.6) + (I×0.3) + (D×0.1)</span>
-                  <span className="font-bold text-sm text-neutral-900">Score: <span className="text-blue-600 text-lg">{priorityScore}</span></span>
-                </div>
-              </div>
-            </div>
-            
-            <div className="flex flex-col h-full">
-              <label className="block text-sm font-medium text-neutral-700 mb-2">Content Source</label>
-              <div className="flex gap-2 mb-4">
-                <button type="button" onClick={() => setUploadMethod("file")} className={`flex-1 py-2 text-sm font-medium rounded-lg border ${uploadMethod === "file" ? "border-blue-600 bg-blue-50 text-blue-700" : "text-neutral-600"}`}><FileUp size={16} className="inline mr-2" />Upload File</button>
-                <button type="button" onClick={() => setUploadMethod("paste")} className={`flex-1 py-2 text-sm font-medium rounded-lg border ${uploadMethod === "paste" ? "border-blue-600 bg-blue-50 text-blue-700" : "text-neutral-600"}`}><Code size={16} className="inline mr-2" />Paste HTML</button>
-              </div>
-              <div className="flex-grow flex flex-col mb-6 relative">
-                {/* FIXED: Robust Visual File Upload Area */}
-                {uploadMethod === "file" ? (
-                  <div 
-                    onDragOver={(e)=>{e.preventDefault(); setIsDragging(true);}} 
-                    onDragLeave={(e)=>{e.preventDefault(); setIsDragging(false);}} 
-                    onDrop={handleFileSelect} 
-                    className={`flex-grow border-2 border-dashed rounded-lg flex flex-col items-center justify-center p-8 transition-colors relative ${isDragging ? 'border-blue-500 bg-blue-50' : 'bg-neutral-50 hover:bg-neutral-100'}`}
-                  >
-                    {file ? (
-                      <div className="text-center animate-in fade-in duration-300">
-                        <FileText className="mx-auto text-blue-600 mb-3" size={40} />
-                        <p className="text-sm font-medium text-neutral-900 truncate max-w-[200px]">{file.name}</p>
-                        <button type="button" onClick={(e) => { e.preventDefault(); setFile(null); }} className="mt-3 text-xs font-semibold text-red-500 hover:text-red-700 px-3 py-1.5 bg-red-50 rounded-md">Remove File</button>
-                      </div>
+              <div className="space-y-3">
+                {categories.map(cat => (
+                  <div key={cat.id} className="flex flex-col sm:flex-row sm:items-center justify-between p-4 bg-neutral-950 border border-neutral-800 rounded-xl gap-4">
+                    {editingCategory?.id === cat.id ? (
+                      <form onSubmit={handleUpdateCategory} className="flex flex-1 items-center gap-3">
+                        <input type="text" value={editCatName} onChange={e => setEditCatName(e.target.value)} className="flex-1 p-2 bg-neutral-900 border border-neutral-700 rounded-lg text-white focus:border-blue-500/50 outline-none" required autoFocus />
+                        <div className="flex items-center gap-2 bg-neutral-900 border border-neutral-700 rounded-lg px-2 py-1">
+                          <span className="text-xs text-neutral-500">Limit:</span>
+                          <input type="number" min={1} max={10} value={editCatLimit} onChange={e => setEditCatLimit(Number(e.target.value))} className="w-10 bg-transparent text-white text-sm font-semibold outline-none" />
+                        </div>
+                        <button type="submit" className="p-2 bg-blue-600 text-white rounded-lg hover:bg-blue-500 transition-colors"><Save size={16}/></button>
+                        <button type="button" onClick={() => setEditingCategory(null)} className="p-2 bg-neutral-800 text-neutral-400 rounded-lg hover:bg-neutral-700 hover:text-white transition-colors"><X size={16}/></button>
+                      </form>
                     ) : (
                       <>
-                        <FileUp className="text-neutral-400 mb-3" size={32} />
-                        <p className="text-sm font-medium text-neutral-700 mb-1">Drag & drop HTML file here</p>
-                        <p className="text-xs text-neutral-500 mb-4">or click to browse</p>
-                        <input type="file" accept=".html" onChange={handleFileSelect} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" />
+                        <div className="flex items-center gap-3">
+                          <span className="font-medium text-neutral-200">{cat.name}</span>
+                          <span className="text-xs text-neutral-400 bg-neutral-800 px-2.5 py-1 rounded-md border border-neutral-700 shadow-sm">Limit: {cat.active_limit}</span>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <button onClick={() => startEditCategory(cat)} className="p-2 text-neutral-500 hover:text-blue-400 hover:bg-neutral-800 rounded-md transition-colors"><Pencil size={16} /></button>
+                          <button onClick={() => handleDeleteCategory(cat.id)} className="p-2 text-neutral-500 hover:text-red-400 hover:bg-neutral-800 rounded-md transition-colors"><Trash2 size={16} /></button>
+                        </div>
                       </>
                     )}
                   </div>
-                ) : (
-                  <textarea value={pastedHtml} onChange={(e) => setPastedHtml(e.target.value)} className="flex-grow w-full p-4 border rounded-lg font-mono text-sm bg-neutral-50 outline-none resize-none focus:ring-2 focus:ring-blue-500" placeholder="Paste HTML code here..." />
-                )}
-              </div>
-              <button type="submit" disabled={status?.type === "loading" || !categoryId} className="w-full bg-neutral-900 text-white font-medium py-3 rounded-lg hover:bg-neutral-800 disabled:opacity-50 transition-colors">Publish to Wishlist</button>
-            </div>
-          </form>
-          {status && <div className={`mt-6 p-4 rounded-lg text-sm text-center font-medium ${status.type === 'error' ? 'bg-red-50 text-red-700' : 'bg-blue-50 text-blue-700'}`}>{status.msg}</div>}
-        </div>
-      )}
-
-      {/* MANAGE TAB */}
-      {activeTab === "manage" && (
-        <div className="bg-white rounded-2xl shadow-sm border border-neutral-200 overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm whitespace-nowrap">
-              <thead className="bg-neutral-50 text-neutral-500 border-b border-neutral-100 uppercase tracking-wider text-xs">
-                <tr><th className="px-6 py-5 font-medium">Curriculum Details</th><th className="px-6 py-5 font-medium text-center">Visibility</th><th className="px-6 py-5 font-medium text-right">Actions</th></tr>
-              </thead>
-              <tbody className="divide-y divide-neutral-100">
-                {roadmaps.map((rm) => (
-                  <tr key={rm.id} className="hover:bg-neutral-50/50">
-                    <td className="px-6 py-4">
-                      <div className="font-medium text-neutral-900 flex items-center gap-2">
-                        {rm.title}
-                        <span className="text-[10px] font-mono font-bold bg-blue-50 text-blue-700 px-1.5 py-0.5 rounded">P:{rm.priority_score}</span>
-                      </div>
-                      <div className="text-neutral-500 text-xs mt-1">{categories.find(c => c.id === rm.category_id)?.name || 'Uncategorized'}</div>
-                    </td>
-                    <td className="px-6 py-4 text-center">
-                      <button onClick={() => togglePublish(rm.id, rm.is_published)} className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium ${rm.is_published ? "bg-green-100 text-green-700" : "bg-neutral-100 text-neutral-600"}`}>
-                        {rm.is_published ? <><Eye size={14} /> Published</> : <><EyeOff size={14} /> Draft</>}
-                      </button>
-                    </td>
-                    <td className="px-6 py-4 text-right">
-                      <div className="flex justify-end gap-2">
-                        <button onClick={() => { 
-                          setEditingRoadmap(rm); 
-                          setEditUploadMethod("keep");
-                          setEditTargetDeadline(rm.target_deadline || ""); 
-                          setEditU(rm.urgency || 5); setEditI(rm.importance || 5); setEditD(rm.difficulty || 5);
-                          setEditAiReasoning("");
-                        }} className="text-neutral-400 hover:text-blue-600 p-2"><Pencil size={16} /></button>
-                        <button onClick={() => handleDelete(rm.id, rm.file_url)} className="text-neutral-400 hover:text-red-600 p-2"><Trash2 size={16} /></button>
-                      </div>
-                    </td>
-                  </tr>
                 ))}
-              </tbody>
-            </table>
+                {categories.length === 0 && <p className="text-neutral-500 text-center py-4">No categories created yet.</p>}
+              </div>
+              {status && <div className={`mt-6 p-4 rounded-lg text-sm text-center font-medium border ${status.type === 'error' ? 'bg-red-500/10 text-red-400 border-red-500/20' : 'bg-green-500/10 text-green-400 border-green-500/20'}`}>{status.msg}</div>}
           </div>
-        </div>
-      )}
+        )}
 
-      {/* EDIT MODAL OVERLAY */}
-      {editingRoadmap && (
-        <div className="fixed inset-0 z-50 bg-neutral-900/40 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white w-full max-w-2xl rounded-2xl shadow-xl overflow-hidden flex flex-col max-h-[90vh]">
-            <div className="px-6 py-4 border-b border-neutral-100 flex items-center justify-between bg-neutral-50">
-              <h2 className="text-lg font-medium text-neutral-900 flex items-center gap-2"><Pencil size={18} /> Edit Roadmap</h2>
-              <button onClick={() => setEditingRoadmap(null)} className="text-neutral-400 hover:text-neutral-600 p-1"><X size={20} /></button>
-            </div>
-            
-            <form onSubmit={handleEditSubmit} className="p-6 overflow-y-auto flex-grow space-y-5 text-sm">
+        {/* GENERATE TAB */}
+        {activeTab === "generate" && (
+          <div className="bg-neutral-900 p-8 rounded-2xl shadow-lg border border-neutral-800 max-w-2xl mx-auto animate-in fade-in">
+            <form onSubmit={handleGenerate} className="space-y-5">
               <div>
-                <label className="block font-medium text-neutral-700 mb-1">Title</label>
-                <input type="text" required value={editingRoadmap.title} onChange={(e) => setEditingRoadmap({...editingRoadmap, title: e.target.value})} className="w-full p-2 border border-neutral-300 rounded-lg focus:ring-2 focus:ring-blue-500" />
+                <label className="block text-sm font-medium mb-1 text-neutral-400">Topic</label>
+                <input type="text" required value={genTopic} onChange={(e) => setGenTopic(e.target.value)} disabled={isGenerating} placeholder="e.g., Quantum Physics" className="w-full p-4 text-lg bg-neutral-950 border border-neutral-800 rounded-xl text-white placeholder-neutral-600 focus:border-blue-500/50 outline-none transition-colors" />
               </div>
-              
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block font-medium text-neutral-700 mb-1">Category</label>
-                  <select required value={editingRoadmap.category_id} onChange={(e) => setEditingRoadmap({...editingRoadmap, category_id: e.target.value})} className="w-full p-2 border border-neutral-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white">
-                    {categories.map(cat => (<option key={cat.id} value={cat.id}>{cat.name}</option>))}
-                  </select>
-                </div>
-                <div>
-                  <label className="block font-medium text-neutral-700 mb-1">Target Deadline</label>
-                  <input type="date" value={editTargetDeadline} onChange={(e) => setEditTargetDeadline(e.target.value)} className="w-full p-2 border border-neutral-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white text-neutral-700" />
-                </div>
-              </div>
-
               <div>
-                <label className="block font-medium text-neutral-700 mb-1">Description</label>
-                <textarea rows={3} required value={editingRoadmap.description} onChange={(e) => setEditingRoadmap({...editingRoadmap, description: e.target.value})} className="w-full p-2 border border-neutral-300 rounded-lg focus:ring-2 focus:ring-blue-500" />
+                <label className="block text-sm font-medium mb-1 text-neutral-400">Target Audience / Skill Level</label>
+                <input type="text" value={genLevel} onChange={(e) => setGenLevel(e.target.value)} disabled={isGenerating} placeholder="e.g., Absolute Beginner" className="w-full p-3 bg-neutral-950 border border-neutral-800 rounded-xl text-white placeholder-neutral-600 focus:border-blue-500/50 outline-none transition-colors" />
               </div>
-
-              {/* EDIT MODAL PRIORITY ENGINE */}
-              <div className="p-4 bg-blue-50/50 border border-blue-100 rounded-xl space-y-3">
-                <div className="flex items-center justify-between">
-                  <label className="block text-xs font-bold text-blue-800 uppercase tracking-wider">Priority Algorithm</label>
-                  <button type="button" onClick={() => handleEvaluatePriority("edit")} disabled={isEvaluating} className="text-xs bg-white border border-blue-200 text-blue-700 px-3 py-1.5 rounded-md hover:bg-blue-50 transition flex items-center gap-1.5 font-medium disabled:opacity-50">
-                    {isEvaluating ? <Loader2 size={12} className="animate-spin"/> : <Brain size={12}/>} Auto-Evaluate Context
-                  </button>
-                </div>
-                {editAiReasoning && <p className="text-xs text-blue-700 bg-white p-3 rounded-lg border border-blue-100 italic">{editAiReasoning}</p>}
-                <div className="space-y-2 pt-2">
-                  {[ ['Urgency', editU, setEditU], ['Importance', editI, setEditI], ['Difficulty', editD, setEditD] ].map(([lbl, val, setFn]: any) => (
-                    <div key={lbl} className="flex items-center gap-4">
-                      <span className="text-xs font-medium text-neutral-600 w-20">{lbl}</span>
-                      <input type="range" min={1} max={10} value={val} onChange={e => setFn(Number(e.target.value))} disabled={isEvaluating} className="flex-1 accent-blue-600 h-1.5 bg-neutral-200 rounded-lg appearance-none cursor-pointer" />
-                      <span className="font-mono text-xs font-semibold text-blue-700 w-6 text-right">{val}</span>
-                    </div>
-                  ))}
-                </div>
-                <div className="pt-2 flex justify-end font-bold text-sm text-neutral-900">
-                  Score: <span className="text-blue-600 ml-2">{editPriorityScore}</span>
-                </div>
+              <div>
+                <label className="block text-sm font-medium mb-1 text-neutral-400">Playlist URL (Optional)</label>
+                <input type="url" value={genUrl} onChange={(e) => setGenUrl(e.target.value)} disabled={isGenerating} placeholder="https://youtube.com/playlist?list=..." className="w-full p-3 bg-neutral-950 border border-neutral-800 rounded-lg text-white placeholder-neutral-600 focus:border-blue-500/50 outline-none transition-colors" />
               </div>
-
-              <div className="p-4 border border-neutral-200 rounded-xl bg-neutral-50 space-y-3">
-                <label className="block font-medium text-neutral-900">Update Content Source</label>
-                <select value={editUploadMethod} onChange={(e: any) => setEditUploadMethod(e.target.value)} className="w-full p-2 border border-neutral-300 rounded-lg bg-white">
-                  <option value="keep">Keep existing HTML file</option>
-                  <option value="file">Upload a new file</option>
-                  <option value="paste">Paste new HTML code</option>
-                </select>
-
-                {editUploadMethod === "file" && (
-                   <input type="file" accept=".html" onChange={handleFileSelect} className="w-full p-2 border border-neutral-300 rounded-lg bg-white file:mr-3 file:rounded-md file:border-0 file:bg-blue-50 file:text-blue-700 file:px-3 file:py-1 text-sm" />
-                )}
-                {editUploadMethod === "paste" && (
-                   <textarea rows={4} value={editPastedHtml} onChange={(e) => setEditPastedHtml(e.target.value)} className="w-full p-2 border border-neutral-300 rounded-lg font-mono text-xs bg-white" placeholder="Paste updated HTML here..." />
-                )}
-              </div>
-
-              <div className="pt-2 flex justify-end gap-3">
-                <button type="button" onClick={() => setEditingRoadmap(null)} className="px-5 py-2 rounded-lg font-medium text-neutral-600 hover:bg-neutral-100 transition-colors">Cancel</button>
-                <button type="submit" disabled={status?.type === "loading"} className="px-5 py-2 rounded-lg font-medium text-white bg-blue-600 hover:bg-blue-700 transition-colors disabled:opacity-50">
-                  {status?.type === "loading" ? "Saving..." : "Save Changes"}
-                </button>
-              </div>
-              
-              {status && (
-                <div className={`mt-2 text-center font-medium ${status.type === 'error' ? 'text-red-600' : 'text-blue-600'}`}>{status.msg}</div>
-              )}
+              <button type="submit" disabled={isGenerating || !genTopic.trim()} className="w-full bg-blue-600 text-white font-medium py-3.5 rounded-xl flex items-center justify-center gap-2 hover:bg-blue-500 disabled:opacity-50 disabled:bg-neutral-800 disabled:text-neutral-500 transition-colors">
+                {isGenerating ? <Loader2 className="animate-spin" size={18} /> : <Sparkles size={18} />} 
+                {isGenerating ? "Architecting..." : "Generate Roadmap"}
+              </button>
             </form>
           </div>
-        </div>
-      )}
+        )}
+
+        {/* UPLOAD TAB */}
+        {activeTab === "upload" && (
+          <div className="bg-neutral-900 p-8 rounded-2xl shadow-lg border border-neutral-800 animate-in fade-in">
+            <form onSubmit={handleUpload} className="grid grid-cols-1 lg:grid-cols-2 gap-10">
+              <div className="space-y-5">
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-sm font-bold text-white">Curriculum Details</label>
+                  {isExtracting && <span className="text-xs text-blue-400 font-medium flex items-center gap-1 animate-pulse"><Sparkles size={12} /> AI Generating...</span>}
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-neutral-500 mb-1">Title</label>
+                  <input type="text" required value={title} onChange={(e) => setTitle(e.target.value)} disabled={isExtracting} className="w-full p-3 bg-neutral-950 border border-neutral-800 rounded-lg text-white outline-none focus:border-blue-500/50 transition-colors" />
+                </div>
+                
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-medium text-neutral-500 mb-1">Category</label>
+                    <select required value={categoryId} onChange={(e) => setCategoryId(e.target.value)} disabled={categories.length === 0} className="w-full p-3 bg-neutral-950 border border-neutral-800 rounded-lg text-white outline-none focus:border-blue-500/50 transition-colors">
+                      {categories.length === 0 && <option value="">No categories found. Create one first!</option>}
+                      {categories.map(cat => (<option key={cat.id} value={cat.id}>{cat.name}</option>))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-neutral-500 mb-1">Target Deadline (Optional)</label>
+                    <input type="date" value={targetDeadline} onChange={(e) => setTargetDeadline(e.target.value)} disabled={isExtracting} style={{ colorScheme: 'dark' }} className="w-full p-3 bg-neutral-950 border border-neutral-800 rounded-lg text-white outline-none focus:border-blue-500/50 transition-colors cursor-pointer" />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-medium text-neutral-500 mb-1">Brief Description</label>
+                  <textarea rows={4} required value={description} onChange={(e) => setDescription(e.target.value)} disabled={isExtracting} className="w-full p-3 bg-neutral-950 border border-neutral-800 rounded-lg text-white outline-none resize-none focus:border-blue-500/50 transition-colors" />
+                </div>
+                
+                {/* PRIORITY ENGINE UI */}
+                <div className="p-5 bg-blue-500/5 border border-blue-500/20 rounded-xl space-y-4">
+                  <div className="flex items-center justify-between">
+                    <label className="block text-xs font-bold text-blue-400 uppercase tracking-wider">Priority Algorithm</label>
+                    <button type="button" onClick={() => handleEvaluatePriority("upload")} disabled={isEvaluating || !title} className="text-xs bg-neutral-900 border border-blue-500/30 text-blue-400 px-3 py-1.5 rounded-md hover:bg-blue-500/10 transition flex items-center gap-1.5 font-medium disabled:opacity-50">
+                      {isEvaluating ? <Loader2 size={12} className="animate-spin"/> : <Brain size={12}/>} Auto-Evaluate Context
+                    </button>
+                  </div>
+                  
+                  {aiReasoning && <p className="text-xs text-blue-300 bg-blue-950/50 p-3 rounded-lg border border-blue-500/20 italic">{aiReasoning}</p>}
+
+                  <div className="space-y-3 pt-2">
+                    {[ ['Urgency', u, setU], ['Importance', i, setI], ['Difficulty', d, setD] ].map(([lbl, val, setFn]: any) => (
+                      <div key={lbl} className="flex items-center gap-4">
+                        <span className="text-xs font-medium text-neutral-400 w-20">{lbl}</span>
+                        <input type="range" min={1} max={10} value={val} onChange={e => setFn(Number(e.target.value))} disabled={isEvaluating} className="flex-1 accent-blue-500 h-1.5 bg-neutral-700 rounded-lg appearance-none cursor-pointer" />
+                        <span className="font-mono text-xs font-semibold text-blue-400 w-6 text-right">{val}</span>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="pt-3 border-t border-blue-500/20 flex justify-between items-center">
+                    <span className="text-blue-500/60 font-mono text-[10px]">P = (U×0.6) + (I×0.3) + (D×0.1)</span>
+                    <span className="font-bold text-sm text-white">Score: <span className="text-blue-400 text-lg">{priorityScore}</span></span>
+                  </div>
+                </div>
+              </div>
+              
+              <div className="flex flex-col h-full">
+                <label className="block text-sm font-bold text-white mb-2">Content Source</label>
+                <div className="flex gap-2 mb-4">
+                  <button type="button" onClick={() => setUploadMethod("file")} className={`flex-1 py-2 text-sm font-medium rounded-lg border transition-colors ${uploadMethod === "file" ? "border-blue-500/50 bg-blue-500/10 text-blue-400" : "border-neutral-800 text-neutral-400 hover:bg-neutral-800"}`}><FileUp size={16} className="inline mr-2" />Upload File</button>
+                  <button type="button" onClick={() => setUploadMethod("paste")} className={`flex-1 py-2 text-sm font-medium rounded-lg border transition-colors ${uploadMethod === "paste" ? "border-blue-500/50 bg-blue-500/10 text-blue-400" : "border-neutral-800 text-neutral-400 hover:bg-neutral-800"}`}><Code size={16} className="inline mr-2" />Paste HTML</button>
+                </div>
+                <div className="flex-grow flex flex-col mb-6 relative">
+                  {uploadMethod === "file" ? (
+                    <div 
+                      onDragOver={(e)=>{e.preventDefault(); setIsDragging(true);}} 
+                      onDragLeave={(e)=>{e.preventDefault(); setIsDragging(false);}} 
+                      onDrop={handleFileSelect} 
+                      className={`flex-grow border-2 border-dashed rounded-lg flex flex-col items-center justify-center p-8 transition-colors relative ${isDragging ? 'border-blue-500 bg-blue-500/5' : 'bg-neutral-950 border-neutral-800 hover:bg-neutral-800/50'}`}
+                    >
+                      {file ? (
+                        <div className="text-center animate-in fade-in duration-300">
+                          <FileText className="mx-auto text-blue-500 mb-3" size={40} />
+                          <p className="text-sm font-medium text-white truncate max-w-[200px]">{file.name}</p>
+                          <button type="button" onClick={(e) => { e.preventDefault(); setFile(null); }} className="mt-3 text-xs font-semibold text-red-400 hover:text-red-300 px-3 py-1.5 bg-red-500/10 border border-red-500/20 rounded-md transition-colors">Remove File</button>
+                        </div>
+                      ) : (
+                        <>
+                          <FileUp className="text-neutral-600 mb-3" size={32} />
+                          <p className="text-sm font-medium text-neutral-400 mb-1">Drag & drop HTML file here</p>
+                          <p className="text-xs text-neutral-600 mb-4">or click to browse</p>
+                          <input type="file" accept=".html" onChange={handleFileSelect} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" />
+                        </>
+                      )}
+                    </div>
+                  ) : (
+                    <textarea value={pastedHtml} onChange={(e) => setPastedHtml(e.target.value)} className="flex-grow w-full p-4 bg-neutral-950 border border-neutral-800 text-neutral-300 rounded-lg font-mono text-sm outline-none resize-none focus:border-blue-500/50 transition-colors" placeholder="Paste HTML code here..." />
+                  )}
+                </div>
+                <button type="submit" disabled={status?.type === "loading" || !categoryId} className="w-full bg-white text-black font-semibold py-3 rounded-lg hover:bg-neutral-200 disabled:bg-neutral-800 disabled:text-neutral-500 transition-colors">Publish to Wishlist</button>
+              </div>
+            </form>
+            {status && <div className={`mt-6 p-4 rounded-lg text-sm text-center font-medium border ${status.type === 'error' ? 'bg-red-500/10 text-red-400 border-red-500/20' : 'bg-blue-500/10 text-blue-400 border-blue-500/20'}`}>{status.msg}</div>}
+          </div>
+        )}
+
+        {/* MANAGE TAB */}
+        {activeTab === "manage" && (
+          <div className="bg-neutral-900 rounded-2xl shadow-lg border border-neutral-800 overflow-hidden animate-in fade-in">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-sm whitespace-nowrap">
+                <thead className="bg-neutral-950 text-neutral-500 border-b border-neutral-800 uppercase tracking-wider text-xs">
+                  <tr><th className="px-6 py-5 font-medium">Curriculum Details</th><th className="px-6 py-5 font-medium text-center">Visibility</th><th className="px-6 py-5 font-medium text-right">Actions</th></tr>
+                </thead>
+                <tbody className="divide-y divide-neutral-800">
+                  {roadmaps.map((rm) => (
+                    <tr key={rm.id} className="hover:bg-neutral-800/50 transition-colors">
+                      <td className="px-6 py-4">
+                        <div className="font-medium text-white flex items-center gap-2">
+                          {rm.title}
+                          <span className="text-[10px] font-mono font-bold bg-blue-500/10 border border-blue-500/20 text-blue-400 px-1.5 py-0.5 rounded">P:{rm.priority_score}</span>
+                        </div>
+                        <div className="text-neutral-500 text-xs mt-1">{categories.find(c => c.id === rm.category_id)?.name || 'Uncategorized'}</div>
+                      </td>
+                      <td className="px-6 py-4 text-center">
+                        <button onClick={() => togglePublish(rm.id, rm.is_published)} className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${rm.is_published ? "bg-green-500/10 border-green-500/20 text-green-400 hover:bg-green-500/20" : "bg-neutral-800 border-neutral-700 text-neutral-400 hover:bg-neutral-700"}`}>
+                          {rm.is_published ? <><Eye size={14} /> Published</> : <><EyeOff size={14} /> Draft</>}
+                        </button>
+                      </td>
+                      <td className="px-6 py-4 text-right">
+                        <div className="flex justify-end gap-2">
+                          <button onClick={() => { 
+                            setEditingRoadmap(rm); 
+                            setEditUploadMethod("keep");
+                            setEditTargetDeadline(rm.target_deadline || ""); 
+                            setEditU(rm.urgency || 5); setEditI(rm.importance || 5); setEditD(rm.difficulty || 5);
+                            setEditAiReasoning("");
+                          }} className="text-neutral-500 hover:text-blue-400 hover:bg-neutral-800 p-2 rounded-lg transition-colors"><Pencil size={16} /></button>
+                          <button onClick={() => handleDelete(rm.id, rm.file_url)} className="text-neutral-500 hover:text-red-400 hover:bg-neutral-800 p-2 rounded-lg transition-colors"><Trash2 size={16} /></button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {/* EDIT MODAL OVERLAY */}
+        {editingRoadmap && (
+          <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+            <div className="bg-neutral-900 w-full max-w-2xl rounded-2xl shadow-2xl border border-neutral-800 overflow-hidden flex flex-col max-h-[90vh] animate-in zoom-in-95 duration-200">
+              <div className="px-6 py-4 border-b border-neutral-800 flex items-center justify-between bg-neutral-950">
+                <h2 className="text-lg font-bold text-white flex items-center gap-2"><Pencil size={18} className="text-blue-500" /> Edit Roadmap</h2>
+                <button onClick={() => setEditingRoadmap(null)} className="text-neutral-500 hover:text-white p-1 transition-colors"><X size={20} /></button>
+              </div>
+              
+              <form onSubmit={handleEditSubmit} className="p-6 overflow-y-auto flex-grow space-y-5 text-sm">
+                <div>
+                  <label className="block font-medium text-neutral-400 mb-1">Title</label>
+                  <input type="text" required value={editingRoadmap.title} onChange={(e) => setEditingRoadmap({...editingRoadmap, title: e.target.value})} className="w-full p-2 bg-neutral-950 border border-neutral-800 text-white rounded-lg focus:border-blue-500/50 outline-none transition-colors" />
+                </div>
+                
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block font-medium text-neutral-400 mb-1">Category</label>
+                    <select required value={editingRoadmap.category_id} onChange={(e) => setEditingRoadmap({...editingRoadmap, category_id: e.target.value})} className="w-full p-2 bg-neutral-950 border border-neutral-800 text-white rounded-lg focus:border-blue-500/50 outline-none transition-colors">
+                      {categories.map(cat => (<option key={cat.id} value={cat.id}>{cat.name}</option>))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block font-medium text-neutral-400 mb-1">Target Deadline</label>
+                    <input type="date" value={editTargetDeadline} onChange={(e) => setEditTargetDeadline(e.target.value)} style={{ colorScheme: 'dark' }} className="w-full p-2 bg-neutral-950 border border-neutral-800 text-white rounded-lg focus:border-blue-500/50 outline-none transition-colors cursor-pointer" />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block font-medium text-neutral-400 mb-1">Description</label>
+                  <textarea rows={3} required value={editingRoadmap.description} onChange={(e) => setEditingRoadmap({...editingRoadmap, description: e.target.value})} className="w-full p-2 bg-neutral-950 border border-neutral-800 text-white rounded-lg focus:border-blue-500/50 outline-none transition-colors" />
+                </div>
+
+                {/* EDIT MODAL PRIORITY ENGINE */}
+                <div className="p-4 bg-blue-500/5 border border-blue-500/20 rounded-xl space-y-3">
+                  <div className="flex items-center justify-between">
+                    <label className="block text-xs font-bold text-blue-400 uppercase tracking-wider">Priority Algorithm</label>
+                    <button type="button" onClick={() => handleEvaluatePriority("edit")} disabled={isEvaluating} className="text-xs bg-neutral-900 border border-blue-500/30 text-blue-400 px-3 py-1.5 rounded-md hover:bg-blue-500/10 transition flex items-center gap-1.5 font-medium disabled:opacity-50">
+                      {isEvaluating ? <Loader2 size={12} className="animate-spin"/> : <Brain size={12}/>} Auto-Evaluate Context
+                    </button>
+                  </div>
+                  {editAiReasoning && <p className="text-xs text-blue-300 bg-blue-950/50 p-3 rounded-lg border border-blue-500/20 italic">{editAiReasoning}</p>}
+                  <div className="space-y-2 pt-2">
+                    {[ ['Urgency', editU, setEditU], ['Importance', editI, setEditI], ['Difficulty', editD, setEditD] ].map(([lbl, val, setFn]: any) => (
+                      <div key={lbl} className="flex items-center gap-4">
+                        <span className="text-xs font-medium text-neutral-400 w-20">{lbl}</span>
+                        <input type="range" min={1} max={10} value={val} onChange={e => setFn(Number(e.target.value))} disabled={isEvaluating} className="flex-1 accent-blue-500 h-1.5 bg-neutral-700 rounded-lg appearance-none cursor-pointer" />
+                        <span className="font-mono text-xs font-semibold text-blue-400 w-6 text-right">{val}</span>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="pt-2 flex justify-end font-bold text-sm text-white">
+                    Score: <span className="text-blue-400 ml-2">{editPriorityScore}</span>
+                  </div>
+                </div>
+
+                <div className="p-4 border border-neutral-800 rounded-xl bg-neutral-950 space-y-3">
+                  <label className="block font-medium text-white">Update Content Source</label>
+                  <select value={editUploadMethod} onChange={(e: any) => setEditUploadMethod(e.target.value)} className="w-full p-2 bg-neutral-900 border border-neutral-700 text-white rounded-lg outline-none focus:border-blue-500/50">
+                    <option value="keep">Keep existing HTML file</option>
+                    <option value="file">Upload a new file</option>
+                    <option value="paste">Paste new HTML code</option>
+                  </select>
+
+                  {editUploadMethod === "file" && (
+                     <input type="file" accept=".html" onChange={handleFileSelect} className="w-full p-2 bg-neutral-900 border border-neutral-700 text-neutral-300 rounded-lg file:mr-3 file:rounded-md file:border-0 file:bg-blue-500/10 file:border file:border-blue-500/20 file:text-blue-400 file:px-3 file:py-1.5 file:font-medium text-sm" />
+                  )}
+                  {editUploadMethod === "paste" && (
+                     <textarea rows={4} value={editPastedHtml} onChange={(e) => setEditPastedHtml(e.target.value)} className="w-full p-2 bg-neutral-900 border border-neutral-700 text-neutral-300 rounded-lg font-mono text-xs outline-none focus:border-blue-500/50" placeholder="Paste updated HTML here..." />
+                  )}
+                </div>
+
+                <div className="pt-2 flex justify-end gap-3">
+                  <button type="button" onClick={() => setEditingRoadmap(null)} className="px-5 py-2 rounded-lg font-medium text-neutral-400 hover:text-white hover:bg-neutral-800 transition-colors">Cancel</button>
+                  <button type="submit" disabled={status?.type === "loading"} className="px-5 py-2 rounded-lg font-medium text-white bg-blue-600 hover:bg-blue-500 transition-colors disabled:opacity-50 disabled:bg-neutral-800 disabled:text-neutral-500">
+                    {status?.type === "loading" ? "Saving..." : "Save Changes"}
+                  </button>
+                </div>
+                
+                {status && (
+                  <div className={`mt-2 text-center font-medium ${status.type === 'error' ? 'text-red-400' : 'text-blue-400'}`}>{status.msg}</div>
+                )}
+              </form>
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

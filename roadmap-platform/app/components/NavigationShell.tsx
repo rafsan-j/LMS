@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useState } from "react";
 import { supabase } from "../../lib/supabase";
-import { Home, ListTodo, CheckSquare, Settings, User, LogOut, Sparkles, Menu, X, FolderOpen } from "lucide-react";
+import { Home, ListTodo, CheckSquare, Settings, User, LogOut, Sparkles, Menu, X, FolderOpen, Calendar } from "lucide-react";
 
 export default function NavigationShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
@@ -15,9 +15,10 @@ export default function NavigationShell({ children }: { children: React.ReactNod
   if (pathname === "/login") return <>{children}</>;
 
   const navLinks = [
-    { name: "Deep Work (Home)", href: "/", icon: Home },
+    { name: "Deep Work", href: "/", icon: Home },
     { name: "Wishlist Queue", href: "/wishlist", icon: ListTodo },
     { name: "Command Center", href: "/todo", icon: CheckSquare },
+    { name: "Milestones", href: "/events", icon: Calendar }, // <-- NEW
     { name: "Curriculum Admin", href: "/admin", icon: FolderOpen },
     { name: "OS Profile", href: "/settings", icon: User }, 
   ];

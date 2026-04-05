@@ -76,46 +76,46 @@ export default function SettingsPage() {
     }
   };
 
-  if (isLoading) return <div className="min-h-screen flex items-center justify-center text-neutral-500">Loading OS Context...</div>;
+  if (isLoading) return <div className="min-h-screen flex items-center justify-center bg-[#0a0a0a] text-neutral-400"><Loader2 className="animate-spin mr-2" /> Loading OS Context...</div>;
 
   return (
-    <div className="p-6 md:p-10 max-w-4xl mx-auto animate-in fade-in slide-in-from-bottom-4 duration-500">
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold tracking-tight mb-2">
+    <div className="p-6 md:p-10 mx-auto animate-in fade-in slide-in-from-bottom-4 duration-500 min-h-screen flex flex-col bg-[#0a0a0a]">
+      <div className="mb-8 max-w-4xl w-full mx-auto">
+        <h1 className="text-3xl font-bold tracking-tight mb-2 text-white">
           {hasProfile ? "Learning Profile" : "Welcome to Focus OS"}
         </h1>
-        <p className="text-neutral-500 text-lg">
+        <p className="text-neutral-400 text-lg">
           {hasProfile 
             ? "Calibrate your learning engine. The AI uses this context to prioritize your curriculum." 
             : "Let's map out your learning psychology so the AI can build a tailored curriculum for you."}
         </p>
       </div>
 
-      <div className="bg-white border border-neutral-200 rounded-2xl shadow-sm overflow-hidden relative">
-        <div className="absolute top-0 right-0 w-64 h-64 bg-blue-500/5 rounded-full blur-3xl pointer-events-none"></div>
+      <div className="max-w-4xl w-full mx-auto bg-neutral-900 border border-neutral-800 rounded-2xl shadow-lg overflow-hidden relative">
+        <div className="absolute top-0 right-0 w-64 h-64 bg-blue-500/10 rounded-full blur-3xl pointer-events-none"></div>
         
         <form onSubmit={handleSave} className="p-8 relative z-10 space-y-10">
           
           {/* Section 1: The "Why" */}
           <div className="space-y-4">
-            <label className="flex items-center gap-2 text-lg font-semibold text-neutral-900 border-b border-neutral-100 pb-2">
-              <Target className="text-blue-600" /> What is your primary objective?
+            <label className="flex items-center gap-2 text-lg font-bold text-white border-b border-neutral-800 pb-2">
+              <Target className="text-blue-500" /> What is your primary objective?
             </label>
-            <p className="text-sm text-neutral-500">Be specific. Are you trying to pivot careers, master a hobby, or pass a specific certification?</p>
+            <p className="text-sm text-neutral-400">Be specific. Are you trying to pivot careers, master a hobby, or pass a specific certification?</p>
             <textarea 
               rows={3} 
               value={goals} 
               onChange={e => setGoals(e.target.value)} 
               placeholder="e.g., I want to transition from marketing to frontend development within the next 8 months by mastering React." 
-              className="w-full p-4 bg-neutral-50 border border-neutral-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all resize-none leading-relaxed text-neutral-800"
+              className="w-full p-4 bg-neutral-950 border border-neutral-800 rounded-xl focus:ring-2 focus:ring-blue-500/50 outline-none transition-all resize-none leading-relaxed text-white placeholder-neutral-600"
               required
             />
           </div>
 
           {/* Section 2: The "How" */}
           <div className="space-y-4">
-            <label className="flex items-center gap-2 text-lg font-semibold text-neutral-900 border-b border-neutral-100 pb-2">
-              <Brain className="text-blue-600" /> How do you learn best?
+            <label className="flex items-center gap-2 text-lg font-bold text-white border-b border-neutral-800 pb-2">
+              <Brain className="text-blue-500" /> How do you learn best?
             </label>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               {[
@@ -127,10 +127,10 @@ export default function SettingsPage() {
                 <div 
                   key={style.id}
                   onClick={() => setLearningStyle(style.id)}
-                  className={`p-4 rounded-xl border-2 cursor-pointer transition-all ${learningStyle === style.id ? 'border-blue-600 bg-blue-50' : 'border-neutral-200 bg-white hover:border-blue-300'}`}
+                  className={`p-4 rounded-xl border-2 cursor-pointer transition-all ${learningStyle === style.id ? 'border-blue-500/50 bg-blue-500/10' : 'border-neutral-800 bg-neutral-950 hover:border-neutral-700 hover:bg-neutral-900'}`}
                 >
-                  <h3 className={`font-semibold mb-1 ${learningStyle === style.id ? 'text-blue-800' : 'text-neutral-900'}`}>{style.label}</h3>
-                  <p className={`text-xs ${learningStyle === style.id ? 'text-blue-600' : 'text-neutral-500'}`}>{style.desc}</p>
+                  <h3 className={`font-semibold mb-1 ${learningStyle === style.id ? 'text-blue-400' : 'text-neutral-200'}`}>{style.label}</h3>
+                  <p className={`text-xs ${learningStyle === style.id ? 'text-blue-300' : 'text-neutral-500'}`}>{style.desc}</p>
                 </div>
               ))}
             </div>
@@ -138,33 +138,33 @@ export default function SettingsPage() {
 
           {/* Section 3: The "Capacity" */}
           <div className="space-y-4">
-            <label className="flex items-center gap-2 text-lg font-semibold text-neutral-900 border-b border-neutral-100 pb-2">
-              <Clock className="text-blue-600" /> Weekly Deep Work Capacity
+            <label className="flex items-center gap-2 text-lg font-bold text-white border-b border-neutral-800 pb-2">
+              <Clock className="text-blue-500" /> Weekly Deep Work Capacity
             </label>
-            <p className="text-sm text-neutral-500">Be honest. How many hours per week can you dedicate exclusively to focused learning?</p>
+            <p className="text-sm text-neutral-400">Be honest. How many hours per week can you dedicate exclusively to focused learning?</p>
             
             <div className="pt-4 px-2">
               <div className="flex justify-between items-end mb-4">
-                <span className="text-blue-600 font-mono text-xl font-bold bg-blue-50 px-4 py-2 rounded-xl">{capacityHours} hrs / week</span>
-                <span className="text-sm font-medium text-neutral-400">{capacityHours < 5 ? 'Casual' : capacityHours < 15 ? 'Dedicated' : 'Intensive'}</span>
+                <span className="text-blue-400 font-mono text-xl font-bold bg-blue-500/10 border border-blue-500/20 px-4 py-2 rounded-xl">{capacityHours} hrs / week</span>
+                <span className="text-sm font-medium text-neutral-500">{capacityHours < 5 ? 'Casual' : capacityHours < 15 ? 'Dedicated' : 'Intensive'}</span>
               </div>
               <input 
                 type="range" min={1} max={40} step={1}
                 value={capacityHours} 
                 onChange={e => setCapacityHours(Number(e.target.value))} 
-                className="w-full accent-blue-600 cursor-pointer h-2 bg-neutral-200 rounded-lg appearance-none"
+                className="w-full accent-blue-500 cursor-pointer h-2 bg-neutral-800 rounded-lg appearance-none"
               />
-              <div className="flex justify-between text-xs text-neutral-400 font-medium mt-2">
+              <div className="flex justify-between text-xs text-neutral-500 font-medium mt-2">
                 <span>1 hr</span>
                 <span>40 hrs</span>
               </div>
             </div>
           </div>
 
-          <div className="pt-6 border-t border-neutral-100 flex items-center justify-between">
+          <div className="pt-6 border-t border-neutral-800 flex items-center justify-between">
             <div className="flex-1">
               {status && (
-                <div className={`text-sm font-medium flex items-center gap-2 ${status.type === 'error' ? 'text-red-600' : 'text-green-600'}`}>
+                <div className={`text-sm font-medium flex items-center gap-2 ${status.type === 'error' ? 'text-red-400' : 'text-green-400'}`}>
                   {status.type === 'success' && <Zap size={16} />}
                   {status.msg}
                 </div>
@@ -173,7 +173,7 @@ export default function SettingsPage() {
             <button 
               type="submit" 
               disabled={isSaving} 
-              className="bg-blue-600 text-white px-8 py-3.5 rounded-xl font-medium hover:bg-blue-700 transition-colors disabled:opacity-50 flex items-center gap-2 shadow-md shadow-blue-600/20"
+              className="bg-blue-600 text-white px-8 py-3.5 rounded-xl font-medium hover:bg-blue-500 transition-colors disabled:opacity-50 disabled:bg-neutral-800 disabled:text-neutral-500 flex items-center gap-2 shadow-lg"
             >
               {isSaving ? <Loader2 size={18} className="animate-spin" /> : <Save size={18} />}
               {isSaving ? "Syncing..." : "Update OS Profile"}
