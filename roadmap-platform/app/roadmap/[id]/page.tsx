@@ -1,52 +1,82 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import { useParams } from "next/navigation";
 import { supabase } from "../../../lib/supabase";
-import Link from "next/link";
-import { ArrowLeft } from "lucide-react";
-import { notFound } from "next/navigation";
 import RoadmapCanvas from "./RoadmapCanvas";
+import { Loader2, AlertCircle } from "lucide-react";
 
-interface PageProps {
-  params: Promise<{ id: string }>;
-}
+export default function RoadmapPage() {
+  // FIXED: Safely extract the ID using the Next.js hook instead of props
+  const params = useParams();
+  const id = params?.id as string;
 
-export default async function RoadmapViewer({ params }: PageProps) {
-  const { id } = await params;
+  const [htmlContent, setHtmlContent] = useState<string>("");
+  const [loading, setLoading] = useState(true);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  const { data: roadmap, error: dbError } = await supabase
-    .from("roadmaps")
-    .select("*")
-    .eq("id", id)
-    .single();
+  useEffect(() => {
+    // Prevent fetching until the URL parameter is successfully parsed
+    if (!id) return;
 
-  if (dbError || !roadmap) return notFound();
+    const fetchRoadmap = async () => {
+      try {
+        console.log("Attempting to fetch course ID:", id); // Debugging log
+        
+        const { data, error: dbError } = await supabase
+          .from("roadmaps")
+          .select("*")
+          .eq("id", id)
+          .single();
+        
+        if (dbError) {
+          console.error("Supabase Error:", dbError.message);
+          throw new Error("Could not find this course in the database.");
+        }
+        
+        if (!data?.file_url) {
+          throw new Error("This course does not have an attached HTML file.");
+        }
 
-  let htmlContent = "<p>Error loading content.</p>";
-  try {
-    const response = await fetch(roadmap.file_url);
-    if (response.ok) {
-      htmlContent = await response.text();
-    }
-  } catch (err) {
-    console.error("Failed to fetch HTML:", err);
+        const res = await fetch(data.file_url);
+        if (!res.ok) {
+          throw new Error(`Storage error: Failed to load file (${res.status}). Ensure the URL is correct.`);
+        }
+        
+        const html = await res.text();
+        setHtmlContent(html);
+        
+      } catch (e: any) {
+        console.error("Roadmap Load Error:", e);
+        setErrorMsg(e.message || "An unknown error occurred while loading the roadmap.");
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchRoadmap();
+  }, [id]);
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center text-neutral-500 gap-3">
+        <Loader2 className="animate-spin" size={32} /> 
+        <p>Loading Interactive Roadmap...</p>
+      </div>
+    );
+  }
+  
+  if (errorMsg) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center p-6 text-center">
+        <div className="bg-red-50 text-red-700 p-6 rounded-2xl max-w-md border border-red-100">
+          <AlertCircle size={40} className="mx-auto mb-4 opacity-50" />
+          <h2 className="text-lg font-bold mb-2">Failed to Load Content</h2>
+          <p className="text-sm">{errorMsg}</p>
+        </div>
+      </div>
+    );
   }
 
-  return (
-    <div className="min-h-screen bg-[#FDFDFD] font-sans selection:bg-blue-100">
-      <nav className="sticky top-0 z-50 bg-[#FDFDFD]/80 backdrop-blur-md border-b border-neutral-100 px-6 py-4 flex items-center justify-between">
-        <Link 
-          href="/" 
-          className="inline-flex items-center gap-2 text-sm text-neutral-500 hover:text-neutral-900 transition-colors"
-        >
-          <ArrowLeft size={16} /> Back to Library
-        </Link>
-        <div className="text-sm font-medium text-neutral-400">
-          {roadmap.category}
-        </div>
-      </nav>
-
-      <main className="px-6">
-        {/* We use our new Client Component to handle interactivity and theme formatting */}
-        <RoadmapCanvas htmlContent={htmlContent} />
-      </main>
-    </div>
-  );
+  return <RoadmapCanvas htmlContent={htmlContent} roadmapId={id} />;
 }

@@ -83,7 +83,6 @@ CRITICAL RULES:
 
 === EXACT TEMPLATE TO FOLLOW ===
 <style>
-*{box-sizing:border-box;margin:0;padding:0}
 .w{padding:1.5rem 0;max-width:900px}
 .hdr{margin-bottom:1.5rem;padding-bottom:1rem;border-bottom:0.5px solid var(--color-border-tertiary)}
 .hdr-title{font-size:22px;font-weight:500;color:var(--color-text-primary);margin-bottom:4px}
