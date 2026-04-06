@@ -269,12 +269,22 @@ const extractMetadataFromText = async (payload: { htmlContent?: string, url?: st
     finally { setIsGenerating(false); }
   };
 
-  const handleUpload = async (e: React.FormEvent) => {
+const handleUpload = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!categoryId) return setStatus({ type: "error", msg: "Please select a category." });
     setStatus({ type: "loading", msg: "Publishing..." });
 
     try {
+      // --- NEW: Grab the active user ID before saving ---
+      const { data: { session } } = await supabase.auth.getSession();
+      let uid = session?.user?.id;
+
+      // Dev mode fallback if session is missing
+      if (!uid) {
+        const { data: fallback } = await supabase.from('focus_user_profiles').select('user_id').limit(1).single();
+        if (fallback) uid = fallback.user_id;
+      }
+
       let publicUrl = "";
       
       if (uploadMethod === "file") {
@@ -289,7 +299,9 @@ const extractMetadataFromText = async (payload: { htmlContent?: string, url?: st
         publicUrl = externalLink; 
       }
 
+      // --- CRITICAL FIX: We are now passing the user_id into the database ---
       const { error: dbError } = await supabase.from("roadmaps").insert([{ 
+        user_id: uid, 
         title, description, category_id: categoryId, file_url: publicUrl, 
         is_published: true, status: 'wishlist', 
         target_deadline: targetDeadline || null,

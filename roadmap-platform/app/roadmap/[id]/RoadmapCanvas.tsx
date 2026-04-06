@@ -6,6 +6,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
+import 'katex/dist/katex.min.css';
 import { supabase } from "../../../lib/supabase"; 
 
 interface RoadmapCanvasProps {
@@ -28,40 +29,67 @@ export default function RoadmapCanvas({ htmlContent, roadmapId }: RoadmapCanvasP
   
   useEffect(() => scrollToBottom(), [messages, isLoading]);
 
-  // --- BULLETPROOF URL ROUTER LISTENER (Scrolls & Animates) ---
+  // --- NEW: MATHJAX ENGINE FOR THE COURSE CANVAS ---
   useEffect(() => {
     if (!htmlContent) return;
-    
+
+    if (!(window as any).MathJax) {
+      // Configure MathJax to recognize single $ for inline math and $$ for block math
+      (window as any).MathJax = {
+        tex: {
+          inlineMath: [['$', '$'], ['\\(', '\\)']],
+          displayMath: [['$$', '$$'], ['\\[', '\\]']],
+          processEscapes: true,
+        },
+        startup: {
+          typeset: false // We trigger it manually so it doesn't interrupt React
+        }
+      };
+
+      const script = document.createElement('script');
+      script.src = 'https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js';
+      script.async = true;
+      script.onload = () => {
+        (window as any).MathJax.typesetPromise?.();
+      };
+      document.head.appendChild(script);
+    } else {
+      // If the script is already loaded, just tell it to re-scan the new content
+      (window as any).MathJax.typesetPromise?.();
+    }
+  }, [htmlContent]);
+
+
+  // --- SMART CONTEXT STRIPPER ---
+  const plainTextContext = htmlContent
+    .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '') // Destroy JS
+    .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, '')   // Destroy CSS
+    .replace(/<[^>]+>/g, ' ')                                          // Destroy HTML tags
+    .replace(/\s+/g, ' ')                                              // Clean up weird spacing
+    .trim()
+    .substring(0, 15000);                                              // Give Gemini 15k chars to read!
+
+  // URL Router Listener
+  useEffect(() => {
+    if (!htmlContent) return;
     const params = new URLSearchParams(window.location.search);
     const lessonId = params.get('lesson');
-    
     if (!lessonId) return;
 
-    // Smart Polling: Wait for the DOM to actually inject the HTML before scrolling
     let attempts = 0;
     const findAndHighlight = setInterval(() => {
       attempts++;
       const el = document.getElementById(lessonId);
       
       if (el) {
-        clearInterval(findAndHighlight); // Found it! Stop looking.
-
-        // 1. Scroll to the CENTER of the screen
+        clearInterval(findAndHighlight);
         el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        
-        // 2. Native Web Animation (Bypasses all CSS conflicts)
         el.animate([
           { backgroundColor: 'transparent', outline: '2px solid transparent', transform: 'scale(1)' },
           { backgroundColor: 'rgba(59, 130, 246, 0.15)', outline: '2px solid rgba(59, 130, 246, 0.8)', transform: 'scale(1.01)', borderRadius: '8px' },
           { backgroundColor: 'transparent', outline: '2px solid transparent', transform: 'scale(1)' }
-        ], {
-          duration: 800, // 0.8 seconds per blink
-          iterations: 3, // Do it 3 times
-          easing: 'ease-in-out'
-        });
-        
+        ], { duration: 800, iterations: 3, easing: 'ease-in-out' });
       } else if (attempts > 20) {
-        // Give up after 10 seconds to prevent infinite loops
         clearInterval(findAndHighlight);
       }
     }, 500);
@@ -69,6 +97,7 @@ export default function RoadmapCanvas({ htmlContent, roadmapId }: RoadmapCanvasP
     return () => clearInterval(findAndHighlight);
   }, [htmlContent]);
 
+  // Progress tracking
   useEffect(() => {
     const fetchProgress = async () => {
       const { data } = await supabase.from('roadmaps').select('progress_state').eq('id', roadmapId).single();
@@ -99,6 +128,7 @@ export default function RoadmapCanvas({ htmlContent, roadmapId }: RoadmapCanvasP
     }
   }, [htmlContent]);
 
+  // Todo Button Injection
   useEffect(() => {
     if (!htmlContent) return;
     const timeout = setTimeout(() => {
@@ -137,6 +167,7 @@ export default function RoadmapCanvas({ htmlContent, roadmapId }: RoadmapCanvasP
     return () => clearTimeout(timeout);
   }, [htmlContent]);
 
+  // Window functions for injected buttons
   useEffect(() => {
     (window as any).go = function (id: string, btn: HTMLElement) {
       document.querySelectorAll('.ph').forEach(p => p.classList.remove('show'));
@@ -207,6 +238,7 @@ export default function RoadmapCanvas({ htmlContent, roadmapId }: RoadmapCanvasP
     };
   }, [roadmapId]);
 
+  // AI Chat Handler
   const handleSendMessage = async (customPrompt?: string) => {
     const textToSend = customPrompt || chatInput;
     if (!textToSend.trim()) return;
@@ -217,18 +249,39 @@ export default function RoadmapCanvas({ htmlContent, roadmapId }: RoadmapCanvasP
     setIsLoading(true);
 
     try {
-      const strippedText = cleanedHtml.replace(/<[^>]*>?/gm, '').substring(0, 300);
       const response = await fetch('/api/tutor', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ messages: newMessages, contextSnippet: strippedText })
+        body: JSON.stringify({ 
+          messages: newMessages, 
+          contextSnippet: plainTextContext 
+        })
       });
-      if (!response.ok) throw new Error();
-      const data = await response.json();
-      setMessages(prev => [...prev, { role: 'ai', content: data.reply }]);
+
+      if (!response.ok || !response.body) throw new Error();
+
+      setIsLoading(false);
+      setMessages(prev => [...prev, { role: 'ai', content: "" }]);
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let done = false;
+
+      while (!done) {
+        const { value, done: readerDone } = await reader.read();
+        done = readerDone;
+        if (value) {
+          const chunk = decoder.decode(value, { stream: true });
+          setMessages(prev => {
+            const updated = [...prev];
+            const lastIdx = updated.length - 1;
+            updated[lastIdx] = { ...updated[lastIdx], content: updated[lastIdx].content + chunk };
+            return updated;
+          });
+        }
+      }
     } catch {
       setMessages(prev => [...prev, { role: 'ai', content: "An error occurred." }]);
-    } finally {
       setIsLoading(false);
     }
   };
@@ -281,7 +334,7 @@ export default function RoadmapCanvas({ htmlContent, roadmapId }: RoadmapCanvasP
               ) : (
                 <div className="flex gap-4 w-full">
                   <div className="flex-shrink-0 mt-1"><div className="w-8 h-8 bg-blue-600 text-white rounded-full flex items-center justify-center shadow-sm"><Sparkles size={14} /></div></div>
-                  <div className="flex-1 text-neutral-300 prose prose-invert max-w-none prose-p:leading-relaxed prose-code:bg-neutral-800 prose-code:text-blue-300 prose-pre:bg-neutral-950 prose-pre:text-neutral-300 prose-pre:border prose-pre:border-neutral-800 prose-math:font-medium">
+                  <div className="flex-1 min-w-0 overflow-x-auto break-words text-neutral-300 prose prose-invert max-w-none prose-p:leading-relaxed prose-code:bg-neutral-800 prose-code:text-blue-300 prose-pre:bg-neutral-950 prose-pre:text-neutral-300 prose-pre:border prose-pre:border-neutral-800 prose-math:font-medium">
                     <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex]}>{msg.content}</ReactMarkdown>
                   </div>
                 </div>
