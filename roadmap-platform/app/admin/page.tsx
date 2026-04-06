@@ -5,7 +5,7 @@ import { supabase } from "../../lib/supabase";
 import { useRouter } from "next/navigation";
 import { 
   Trash2, Eye, EyeOff, UploadCloud, LayoutDashboard, 
-  Code, FileUp, Pencil, X, Sparkles, Wand2, Loader2, FolderPlus, Save, Brain, FileText
+  Code, FileUp, Pencil, X, Sparkles, Wand2, Loader2, FolderPlus, Save, Brain, FileText, Link as LinkIcon
 } from "lucide-react";
 
 type Category = { id: string; name: string; active_limit: number };
@@ -21,7 +21,7 @@ export default function AdminDashboard() {
   const [userProfile, setUserProfile] = useState<any>(null);
   
   const [activeTab, setActiveTab] = useState<"upload" | "manage" | "generate" | "categories">("upload");
-  const [uploadMethod, setUploadMethod] = useState<"file" | "paste">("file");
+  const [uploadMethod, setUploadMethod] = useState<"file" | "paste" | "link">("file");
   
   const [categories, setCategories] = useState<Category[]>([]);
   const [roadmaps, setRoadmaps] = useState<Roadmap[]>([]);
@@ -32,6 +32,7 @@ export default function AdminDashboard() {
   const [categoryId, setCategoryId] = useState("");
   const [file, setFile] = useState<File | null>(null); 
   const [pastedHtml, setPastedHtml] = useState("");
+  const [externalLink, setExternalLink] = useState("");
   const [status, setStatus] = useState<{ type: "error" | "success" | "loading", msg: string } | null>(null);
   const [targetDeadline, setTargetDeadline] = useState("");
   
@@ -62,7 +63,8 @@ export default function AdminDashboard() {
   const [editingRoadmap, setEditingRoadmap] = useState<Roadmap | null>(null);
   const [editFile, setEditFile] = useState<File | null>(null);
   const [editPastedHtml, setEditPastedHtml] = useState("");
-  const [editUploadMethod, setEditUploadMethod] = useState<"keep" | "file" | "paste">("keep");
+  const [editExternalLink, setEditExternalLink] = useState("");
+  const [editUploadMethod, setEditUploadMethod] = useState<"keep" | "file" | "paste" | "link">("keep");
   const [editTargetDeadline, setEditTargetDeadline] = useState("");
   
   // Priority State (Edit)
@@ -157,28 +159,57 @@ export default function AdminDashboard() {
     return data.publicUrl;
   };
 
-  const extractMetadataFromText = async (text: string) => {
-    if (!text.trim()) return;
+const extractMetadataFromText = async (payload: { htmlContent?: string, url?: string }) => {
+    if (!payload.htmlContent?.trim() && !payload.url?.trim()) return;
+    
     setIsExtracting(true);
     setStatus({ type: "loading", msg: "AI is analyzing metadata..." });
 
     try {
       const response = await fetch('/api/extract-metadata', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ htmlContent: text })
+        body: JSON.stringify(payload)
       });
       if (!response.ok) throw new Error("AI extraction failed.");
       const data = await response.json();
       
-      setTitle(data.title || ""); 
-      setDescription(data.description || "");
-      if (data.category && categories.length > 0) {
-        const match = categories.find(c => c.name.toLowerCase().includes(data.category.toLowerCase()));
-        if (match) setCategoryId(match.id);
+      if (data.title) setTitle(data.title); 
+      if (data.description) setDescription(data.description);
+      
+      // SMART CATEGORY LOGIC
+      if (data.category) {
+        // Check if category already exists in your DB
+        const match = categories.find(c => 
+          c.name.toLowerCase() === data.category.toLowerCase() || 
+          data.category.toLowerCase().includes(c.name.toLowerCase())
+        );
+        
+        if (match) {
+          setCategoryId(match.id);
+        } else {
+          // Trigger browser confirmation popup
+          const createNew = window.confirm(`The AI suggested a new category: "${data.category}". Would you like to create it?`);
+          
+          if (createNew) {
+            setStatus({ type: "loading", msg: "Creating new category..." });
+            const { data: newCat, error } = await supabase
+              .from("focus_categories")
+              .insert([{ name: data.category, active_limit: 3 }])
+              .select()
+              .single();
+              
+            if (error) {
+              console.error("Failed to create category:", error);
+            } else if (newCat) {
+              setCategories(prev => [...prev, newCat].sort((a, b) => a.name.localeCompare(b.name)));
+              setCategoryId(newCat.id);
+            }
+          }
+        }
       }
       setStatus({ type: "success", msg: "AI successfully auto-filled the details!" });
     } catch (error) {
-      setStatus({ type: "error", msg: "AI failed to read content. Please enter manually." });
+      setStatus({ type: "error", msg: "AI failed to extract info. Please enter manually." });
     } finally { setIsExtracting(false); }
   };
 
@@ -233,7 +264,7 @@ export default function AdminDashboard() {
       
       setPastedHtml(data.html); setUploadMethod("paste"); setActiveTab("upload");
       setGenTopic(""); setGenLevel(""); setGenUrl("");
-      extractMetadataFromText(data.html);
+      extractMetadataFromText({ htmlContent: data.html });
     } catch (err: any) { setStatus({ type: "error", msg: err.message }); } 
     finally { setIsGenerating(false); }
   };
@@ -244,13 +275,20 @@ export default function AdminDashboard() {
     setStatus({ type: "loading", msg: "Publishing..." });
 
     try {
-      let finalFile = file;
-      if (uploadMethod === "paste" && pastedHtml) {
-        finalFile = createHtmlFileFromText(pastedHtml, "pasted-roadmap.html");
+      let publicUrl = "";
+      
+      if (uploadMethod === "file") {
+        if (!file) throw new Error("Please select an HTML file.");
+        publicUrl = await uploadFileToStorage(file);
+      } else if (uploadMethod === "paste") {
+        if (!pastedHtml.trim()) throw new Error("Please paste HTML code.");
+        const newFile = createHtmlFileFromText(pastedHtml, "pasted-roadmap.html");
+        publicUrl = await uploadFileToStorage(newFile);
+      } else if (uploadMethod === "link") {
+        if (!externalLink.trim() || !externalLink.startsWith("http")) throw new Error("Please provide a valid URL.");
+        publicUrl = externalLink; 
       }
-      if (!finalFile) throw new Error("Please select or paste an HTML file.");
 
-      const publicUrl = await uploadFileToStorage(finalFile);
       const { error: dbError } = await supabase.from("roadmaps").insert([{ 
         title, description, category_id: categoryId, file_url: publicUrl, 
         is_published: true, status: 'wishlist', 
@@ -260,7 +298,7 @@ export default function AdminDashboard() {
       if (dbError) throw dbError;
 
       setStatus({ type: "success", msg: "Published to Wishlist!" });
-      setTitle(""); setDescription(""); setFile(null); setPastedHtml(""); setTargetDeadline("");
+      setTitle(""); setDescription(""); setFile(null); setPastedHtml(""); setExternalLink(""); setTargetDeadline("");
       setU(5); setI(5); setD(5); setAiReasoning("");
       fetchRoadmaps(); setActiveTab("manage");
     } catch (error: any) { setStatus({ type: "error", msg: error.message }); }
@@ -273,14 +311,21 @@ export default function AdminDashboard() {
 
     try {
       let updatedFileUrl = editingRoadmap.file_url;
+      
       if (editUploadMethod !== "keep") {
-        let newFile = editFile;
-        if (editUploadMethod === "paste" && editPastedHtml) {
-          newFile = createHtmlFileFromText(editPastedHtml, "updated-roadmap.html");
+        if (editUploadMethod === "file") {
+          if (!editFile) throw new Error("Please provide the new HTML file.");
+          updatedFileUrl = await uploadFileToStorage(editFile);
+        } else if (editUploadMethod === "paste") {
+          if (!editPastedHtml) throw new Error("Please provide the pasted HTML.");
+          const newFile = createHtmlFileFromText(editPastedHtml, "updated-roadmap.html");
+          updatedFileUrl = await uploadFileToStorage(newFile);
+        } else if (editUploadMethod === "link") {
+          if (!editExternalLink) throw new Error("Please provide a valid URL.");
+          updatedFileUrl = editExternalLink;
         }
-        if (!newFile) throw new Error("Please provide the new HTML file.");
-        updatedFileUrl = await uploadFileToStorage(newFile);
       }
+
       const { error } = await supabase.from("roadmaps").update({ 
         title: editingRoadmap.title, category_id: editingRoadmap.category_id, 
         description: editingRoadmap.description, file_url: updatedFileUrl,
@@ -302,8 +347,10 @@ export default function AdminDashboard() {
   const handleDelete = async (id: string, fileUrl: string) => {
     if (!window.confirm("Permanently delete this?")) return;
     try {
-      const exactFileName = fileUrl.split('roadmap_files/')[1]?.split('?')[0];
-      if (exactFileName) await supabase.storage.from("roadmap_files").remove([exactFileName]);
+      if (fileUrl.includes('roadmap_files/')) {
+        const exactFileName = fileUrl.split('roadmap_files/')[1]?.split('?')[0];
+        if (exactFileName) await supabase.storage.from("roadmap_files").remove([exactFileName]);
+      }
       await supabase.from("roadmaps").delete().eq("id", id);
       fetchRoadmaps();
     } catch (err) { alert("Deletion failed."); }
@@ -314,17 +361,13 @@ export default function AdminDashboard() {
     setIsDragging(false);
     
     let selectedFile: File | undefined = undefined;
-
-    if ('dataTransfer' in e) {
-      selectedFile = e.dataTransfer.files?.[0]; 
-    } else {
-      selectedFile = (e.target as HTMLInputElement).files?.[0]; 
-    }
+    if ('dataTransfer' in e) { selectedFile = e.dataTransfer.files?.[0]; } 
+    else { selectedFile = (e.target as HTMLInputElement).files?.[0]; }
     
     if (selectedFile) { 
       setFile(selectedFile); 
       const text = await selectedFile.text(); 
-      extractMetadataFromText(text); 
+      extractMetadataFromText({ htmlContent: text }); 
     } else { 
       setFile(null); 
     }
@@ -335,6 +378,7 @@ export default function AdminDashboard() {
   return (
     <div className="min-h-screen bg-[#0a0a0a] text-white p-6 md:p-10 flex flex-col items-center">
       <div className="w-full max-w-5xl">
+        
         {/* HEADER & NAV */}
         <div className="flex flex-col md:flex-row md:items-end justify-between mb-8 gap-4">
           <div>
@@ -423,6 +467,8 @@ export default function AdminDashboard() {
         {activeTab === "upload" && (
           <div className="bg-neutral-900 p-8 rounded-2xl shadow-lg border border-neutral-800 animate-in fade-in">
             <form onSubmit={handleUpload} className="grid grid-cols-1 lg:grid-cols-2 gap-10">
+              
+              {/* Left Column: Details & Priority */}
               <div className="space-y-5">
                 <div className="flex items-center justify-between mb-1">
                   <label className="block text-sm font-bold text-white">Curriculum Details</label>
@@ -479,14 +525,19 @@ export default function AdminDashboard() {
                 </div>
               </div>
               
+              {/* Right Column: Content Source */}
               <div className="flex flex-col h-full">
                 <label className="block text-sm font-bold text-white mb-2">Content Source</label>
-                <div className="flex gap-2 mb-4">
+                
+                {/* 3-WAY TOGGLE */}
+                <div className="flex flex-wrap gap-2 mb-4">
                   <button type="button" onClick={() => setUploadMethod("file")} className={`flex-1 py-2 text-sm font-medium rounded-lg border transition-colors ${uploadMethod === "file" ? "border-blue-500/50 bg-blue-500/10 text-blue-400" : "border-neutral-800 text-neutral-400 hover:bg-neutral-800"}`}><FileUp size={16} className="inline mr-2" />Upload File</button>
                   <button type="button" onClick={() => setUploadMethod("paste")} className={`flex-1 py-2 text-sm font-medium rounded-lg border transition-colors ${uploadMethod === "paste" ? "border-blue-500/50 bg-blue-500/10 text-blue-400" : "border-neutral-800 text-neutral-400 hover:bg-neutral-800"}`}><Code size={16} className="inline mr-2" />Paste HTML</button>
+                  <button type="button" onClick={() => setUploadMethod("link")} className={`flex-1 py-2 text-sm font-medium rounded-lg border transition-colors ${uploadMethod === "link" ? "border-blue-500/50 bg-blue-500/10 text-blue-400" : "border-neutral-800 text-neutral-400 hover:bg-neutral-800"}`}><LinkIcon size={16} className="inline mr-2" />Link URL</button>
                 </div>
+                
                 <div className="flex-grow flex flex-col mb-6 relative">
-                  {uploadMethod === "file" ? (
+                  {uploadMethod === "file" && (
                     <div 
                       onDragOver={(e)=>{e.preventDefault(); setIsDragging(true);}} 
                       onDragLeave={(e)=>{e.preventDefault(); setIsDragging(false);}} 
@@ -508,8 +559,30 @@ export default function AdminDashboard() {
                         </>
                       )}
                     </div>
-                  ) : (
+                  )}
+                  {uploadMethod === "paste" && (
                     <textarea value={pastedHtml} onChange={(e) => setPastedHtml(e.target.value)} className="flex-grow w-full p-4 bg-neutral-950 border border-neutral-800 text-neutral-300 rounded-lg font-mono text-sm outline-none resize-none focus:border-blue-500/50 transition-colors" placeholder="Paste HTML code here..." />
+                  )}
+                  {uploadMethod === "link" && (
+                    <div className="flex-grow w-full bg-neutral-950 border border-neutral-800 rounded-lg p-6 flex flex-col justify-center gap-4">
+                      <div className="flex items-center gap-3 text-neutral-400 bg-neutral-900 p-4 rounded-xl border border-neutral-800">
+                        <LinkIcon size={24} className="text-blue-500 shrink-0"/>
+                        <p className="text-sm">Paste a YouTube Playlist, Udemy course, or Coursera link. The OS will launch it in a new tab when accessed.</p>
+                      </div>
+                      <div className="flex gap-2">
+                        <input 
+                          type="url" 
+                          value={externalLink} 
+                          onChange={(e) => setExternalLink(e.target.value)} 
+                          onBlur={() => externalLink && extractMetadataFromText({ url: externalLink })}
+                          className="flex-grow p-3 bg-neutral-900 border border-neutral-700 text-white rounded-lg outline-none focus:border-blue-500/50 transition-colors" 
+                          placeholder="https://www.youtube.com/playlist?list=..." 
+                        />
+                        <button type="button" onClick={() => externalLink && extractMetadataFromText({ url: externalLink })} className="bg-neutral-800 border border-neutral-700 text-neutral-300 px-4 rounded-lg hover:bg-neutral-700 hover:text-white transition-colors" title="Force Auto-Fill">
+                          <Sparkles size={18}/>
+                        </button>
+                      </div>
+                    </div>
                   )}
                 </div>
                 <button type="submit" disabled={status?.type === "loading" || !categoryId} className="w-full bg-white text-black font-semibold py-3 rounded-lg hover:bg-neutral-200 disabled:bg-neutral-800 disabled:text-neutral-500 transition-colors">Publish to Wishlist</button>
@@ -620,17 +693,25 @@ export default function AdminDashboard() {
 
                 <div className="p-4 border border-neutral-800 rounded-xl bg-neutral-950 space-y-3">
                   <label className="block font-medium text-white">Update Content Source</label>
-                  <select value={editUploadMethod} onChange={(e: any) => setEditUploadMethod(e.target.value)} className="w-full p-2 bg-neutral-900 border border-neutral-700 text-white rounded-lg outline-none focus:border-blue-500/50">
-                    <option value="keep">Keep existing HTML file</option>
-                    <option value="file">Upload a new file</option>
-                    <option value="paste">Paste new HTML code</option>
-                  </select>
+                  
+                  <div className="flex gap-2 mb-2">
+                    <button type="button" onClick={() => setEditUploadMethod("keep")} className={`flex-1 py-1.5 text-xs font-medium rounded-md border transition-colors ${editUploadMethod === "keep" ? "border-blue-500/50 bg-blue-500/10 text-blue-400" : "border-neutral-800 text-neutral-400 hover:bg-neutral-800"}`}>Keep Existing</button>
+                    <button type="button" onClick={() => setEditUploadMethod("file")} className={`flex-1 py-1.5 text-xs font-medium rounded-md border transition-colors ${editUploadMethod === "file" ? "border-blue-500/50 bg-blue-500/10 text-blue-400" : "border-neutral-800 text-neutral-400 hover:bg-neutral-800"}`}>New File</button>
+                    <button type="button" onClick={() => setEditUploadMethod("paste")} className={`flex-1 py-1.5 text-xs font-medium rounded-md border transition-colors ${editUploadMethod === "paste" ? "border-blue-500/50 bg-blue-500/10 text-blue-400" : "border-neutral-800 text-neutral-400 hover:bg-neutral-800"}`}>New HTML</button>
+                    <button type="button" onClick={() => setEditUploadMethod("link")} className={`flex-1 py-1.5 text-xs font-medium rounded-md border transition-colors ${editUploadMethod === "link" ? "border-blue-500/50 bg-blue-500/10 text-blue-400" : "border-neutral-800 text-neutral-400 hover:bg-neutral-800"}`}>New URL</button>
+                  </div>
 
+                  {editUploadMethod === "keep" && (
+                    <div className="p-2 bg-neutral-900 border border-neutral-800 rounded-lg text-neutral-500 text-xs truncate">Current: {editingRoadmap.file_url}</div>
+                  )}
                   {editUploadMethod === "file" && (
                      <input type="file" accept=".html" onChange={handleFileSelect} className="w-full p-2 bg-neutral-900 border border-neutral-700 text-neutral-300 rounded-lg file:mr-3 file:rounded-md file:border-0 file:bg-blue-500/10 file:border file:border-blue-500/20 file:text-blue-400 file:px-3 file:py-1.5 file:font-medium text-sm" />
                   )}
                   {editUploadMethod === "paste" && (
                      <textarea rows={4} value={editPastedHtml} onChange={(e) => setEditPastedHtml(e.target.value)} className="w-full p-2 bg-neutral-900 border border-neutral-700 text-neutral-300 rounded-lg font-mono text-xs outline-none focus:border-blue-500/50" placeholder="Paste updated HTML here..." />
+                  )}
+                  {editUploadMethod === "link" && (
+                     <input type="url" value={editExternalLink} onChange={(e) => setEditExternalLink(e.target.value)} className="w-full p-2 bg-neutral-900 border border-neutral-700 text-neutral-300 rounded-lg text-sm outline-none focus:border-blue-500/50" placeholder="Paste new URL here..." />
                   )}
                 </div>
 

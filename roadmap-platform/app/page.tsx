@@ -6,11 +6,11 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { 
   CheckCircle2, Circle, Clock, Calendar, BookOpen, 
-  Zap, Loader2, ArrowRight, Target, Flame
+  Zap, Loader2, ArrowRight, Target, Flame, ExternalLink
 } from "lucide-react";
 
 type FocusEvent = { id: string; title: string; event_date: string; };
-type RoadmapMin = { id: string; title: string; linked_event_id: string | null; };
+type RoadmapMin = { id: string; title: string; linked_event_id: string | null; file_url: string; };
 type TodoMin = { id: string; title: string; is_completed: boolean; linked_roadmap_id: string | null; };
 
 export default function DeepWorkHome() {
@@ -41,7 +41,6 @@ export default function DeepWorkHome() {
   const fetchData = async (uid: string) => {
     setIsLoading(true);
 
-    // 1. Fetch all events to find the absolute closest deadline
     const { data: eventsData } = await supabase.from("focus_events").select("*").eq("user_id", uid);
     let nearest: { event: FocusEvent, daysLeft: number } | null = null;
     
@@ -55,8 +54,8 @@ export default function DeepWorkHome() {
     }
     setClosestEvent(nearest);
 
-    // 2. Fetch active Roadmaps and calculate their personal urgency
-    const { data: roadmapData } = await supabase.from("roadmaps").select("id, title, linked_event_id").eq("user_id", uid);
+    // FIXED: Added file_url to the select query
+    const { data: roadmapData } = await supabase.from("roadmaps").select("id, title, linked_event_id, file_url").eq("user_id", uid).eq("status", "active");
     if (roadmapData) {
       const rMap: Record<string, string> = {};
       const enrichedRoadmaps = roadmapData.map(rm => {
@@ -69,7 +68,6 @@ export default function DeepWorkHome() {
         return { ...rm, daysLeft };
       });
       
-      // Sort: Urgent first, then unlinked
       enrichedRoadmaps.sort((a, b) => {
         if (a.daysLeft === null) return 1;
         if (b.daysLeft === null) return -1;
@@ -80,7 +78,6 @@ export default function DeepWorkHome() {
       setRoadmapMap(rMap);
     }
 
-    // 3. Fetch ONLY Today's uncompleted tasks from the Command Center
     const { data: todoData } = await supabase
       .from("focus_todos")
       .select("id, title, is_completed, linked_roadmap_id")
@@ -111,7 +108,6 @@ export default function DeepWorkHome() {
   return (
     <div className="p-6 md:p-10 mx-auto animate-in fade-in slide-in-from-bottom-4 duration-500 min-h-screen flex flex-col bg-[#0a0a0a]">
       
-      {/* 1. Global Milestone Countdown */}
       {closestEvent && (
         <div className="mb-10 w-full rounded-2xl bg-gradient-to-br from-blue-900/40 to-neutral-900 border border-blue-500/20 p-8 shadow-2xl relative overflow-hidden group">
           <div className="absolute top-0 right-0 p-8 opacity-10 group-hover:opacity-20 transition-opacity">
@@ -135,7 +131,6 @@ export default function DeepWorkHome() {
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         
-        {/* 2. Tactical Execution (Command Center Mirror) */}
         <div className="lg:col-span-1 flex flex-col">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-lg font-bold text-white flex items-center gap-2"><Zap size={18} className="text-amber-400"/> Deep Work (Today)</h2>
@@ -170,7 +165,6 @@ export default function DeepWorkHome() {
           </div>
         </div>
 
-        {/* 3. Active Roadmaps Sorted by Temporal Priority */}
         <div className="lg:col-span-2 flex flex-col">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-lg font-bold text-white flex items-center gap-2"><BookOpen size={18} className="text-blue-400"/> Active Curriculum</h2>
@@ -187,10 +181,21 @@ export default function DeepWorkHome() {
               activeRoadmaps.map(rm => {
                 const isUrgent = rm.daysLeft !== null && rm.daysLeft <= 14;
                 
+                // FIXED: Detect if it's a raw external link vs an uploaded HTML file
+                const isExternalLink = rm.file_url && rm.file_url.startsWith('http') && !rm.file_url.includes('roadmap_files');
+                
+                const CardWrapper = isExternalLink ? 'a' : Link;
+                const linkProps = isExternalLink 
+                  ? { href: rm.file_url, target: "_blank", rel: "noopener noreferrer" } 
+                  : { href: `/roadmap/${rm.id}` };
+
                 return (
-                  <Link href={`/roadmap/${rm.id}`} key={rm.id}>
+                  <CardWrapper {...linkProps} key={rm.id}>
                     <div className={`h-full bg-neutral-900 border ${isUrgent ? 'border-amber-500/30' : 'border-neutral-800'} hover:border-blue-500/50 rounded-2xl p-5 shadow-lg transition-all group hover:-translate-y-1`}>
-                      <h3 className="font-bold text-white text-lg mb-4 group-hover:text-blue-400 transition-colors line-clamp-2">{rm.title}</h3>
+                      <div className="flex justify-between items-start gap-2 mb-4">
+                        <h3 className="font-bold text-white text-lg group-hover:text-blue-400 transition-colors line-clamp-2">{rm.title}</h3>
+                        {isExternalLink && <ExternalLink size={16} className="text-neutral-500 shrink-0 mt-1" />}
+                      </div>
                       
                       <div className="flex items-center justify-between mt-auto pt-4 border-t border-neutral-800/50">
                         {rm.daysLeft !== null ? (
@@ -205,7 +210,7 @@ export default function DeepWorkHome() {
                         <ArrowRight size={16} className="text-neutral-600 group-hover:text-blue-400 transition-colors" />
                       </div>
                     </div>
-                  </Link>
+                  </CardWrapper>
                 );
               })
             )}
